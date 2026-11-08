@@ -1,0 +1,11 @@
+.DS_Store
+.env
+backend/.venv/
+backend/.alembic-scratch.db
+**/__pycache__/
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+*.db
+*.db-wal
+*.db-shm

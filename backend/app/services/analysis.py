@@ -1,0 +1,229 @@
+"""Loudness analysis runs: measure a file or a folder, keep every result as history."""
+import concurrent.futures
+import os
+from pathlib import Path
+
+from sqlalchemy import select
+
+from ..config import get_config
+from ..core import audio, history
+from ..db import session_scope
+from ..jobs import handler
+from ..models import File, Job, Measurement
+from .library import register_file
+
+MEASURE_FIELDS = ("status", "error", "integrated_lufs", "true_peak_dbtp", "loudness_range_lu",
+                  "duration_seconds", "codec", "sample_rate_hz", "channels")
+QUALITY_FIELDS = ("corrupt_frames", "audio_md5", "tag_artist", "tag_title", "album", "year",
+                  "bitrate_kbps", "has_art", "hf_gap_17k_db", "hf_gap_19k_db")
+
+
+def measurement_row(m):
+    """A measurement as a flat dict (the shape the history and the review use)."""
+    row = {"id": m.id, "job_id": m.job_id, "path": m.path, "filename": os.path.basename(m.path),
+           "sha256": m.sha256, "measured_at": m.measured_at, "origin": m.origin, "full": m.full}
+    row.update({k: getattr(m, k) for k in MEASURE_FIELDS})
+    row.update({k: (m.extra or {}).get(k) for k in QUALITY_FIELDS if k in (m.extra or {})})
+    return row
+
+
+def new_measurement(path, result, sha, stat, job_id, full, origin="app", versions=None):
+    extra = {k: result.get(k) for k in QUALITY_FIELDS if k in result}
+    if versions:
+        extra.update(versions)
+    return Measurement(job_id=job_id, path=str(path), sha256=sha, size=stat.st_size if stat else None,
+                       mtime_ns=str(stat.st_mtime_ns) if stat else None, full=full, origin=origin,
+                       extra=extra, **{k: result.get(k) for k in MEASURE_FIELDS})
+
+
+def cached_sha(session, path, stat):
+    row = session.scalar(select(File).where(File.path == str(path)))
+    if row and row.sha256 and row.size == stat.st_size and row.mtime_ns == str(stat.st_mtime_ns):
+        return row.sha256
+    return None
+
+
+def reusable(session, sha, full, ffmpeg_version):
+    """A previous good measurement of the same bytes with the same ffmpeg."""
+    query = select(Measurement).where(Measurement.sha256 == sha, Measurement.status == "OK")
+    if full:
+        query = query.where(Measurement.full.is_(True))
+    for m in session.scalars(query.order_by(Measurement.id.desc())).all():
+        if (m.extra or {}).get("ffmpeg_version") in (None, ffmpeg_version):
+            return m
+    return None
+
+
+@handler("analyze")
+def run_analysis(ctx):
+    """params: {"path": file or folder, "reuse": true}. Measuring is read-only."""
+    missing = audio.missing_tools()
+    if missing:
+        raise RuntimeError(f"Missing executable: {', '.join(missing)}")
+    source = Path(ctx.params["path"]).expanduser().resolve()
+    if not source.exists() or (source.is_file() and source.suffix.lower() not in audio.EXT):
+        raise ValueError("Input does not exist or format is unsupported")
+    paths = [source] if source.is_file() else sorted(
+        p for p in source.rglob("*") if p.is_file() and p.suffix.lower() in audio.EXT
+        and not any(part.startswith(".") for part in p.relative_to(source).parts))
+    versions = audio.tool_versions()
+    scope = "file" if source.is_file() else "folder"
+    summary = {"scope": scope, "input": str(source), "manifest": [str(p) for p in paths],
+               "config": {"input": str(source), **versions,
+                          "filter": "loudnorm=print_format=json; first audio stream"}}
+    with session_scope() as s:
+        job = s.get(Job, ctx.job_id)
+        job.summary = {**summary, "complete": False}
+        done_here = {m.path: m.mtime_ns for m in s.scalars(select(Measurement).where(
+            Measurement.job_id == ctx.job_id)).all()}
+    total = len(paths)
+    ctx.progress(0, total, f"{total} file(s) to analyze")
+    todo = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError as exc:
+            with session_scope() as s:
+                s.add(new_measurement(path, {"status": "ERROR", "error": str(exc)}, None, None, ctx.job_id, False))
+            continue
+        if done_here.get(str(path)) == str(stat.st_mtime_ns):
+            continue  # resumed: measured before the interruption
+        todo.append((path, stat))
+    finished = total - len(todo)
+    reused = 0
+
+    def work(item):
+        path, stat = item
+        with session_scope() as s:
+            sha = cached_sha(s, path, stat)
+        sha = sha or audio.sha256_file(path)
+        if ctx.params.get("reuse", True):
+            with session_scope() as s:
+                old = reusable(s, sha, False, versions["ffmpeg_version"])
+                if old:
+                    return path, stat, sha, measurement_row(old), True
+        result = audio.measure(path)
+        after = path.stat()
+        if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
+            result.update(status="ERROR", error="File changed during analysis")
+        return path, stat, sha, result, False
+
+    workers = get_config().workers
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        pending = set()
+        queue = iter(todo)
+        for item in queue:
+            pending.add(pool.submit(work, item))
+            if len(pending) >= workers * 2:
+                break
+        while pending:
+            done, pending = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                path, stat, sha, result, was_reused = future.result()
+                reused += was_reused
+                with session_scope() as s:
+                    s.add(new_measurement(path, result, sha, stat, ctx.job_id, False,
+                                          origin="reused" if was_reused else "app", versions=versions))
+                    row = register_file(s, path, _area(path))
+                    if result.get("status") != "ERROR" or "changed" not in (result.get("error") or ""):
+                        row.sha256, row.size, row.mtime_ns = sha, stat.st_size, str(stat.st_mtime_ns)
+                finished += 1
+                ctx.progress(finished, total, path.name)
+            if not ctx.cancelled():
+                for item in queue:
+                    pending.add(pool.submit(work, item))
+                    if len(pending) >= workers * 2:
+                        break
+    complete = not ctx.cancelled()
+    with session_scope() as s:
+        job = s.get(Job, ctx.job_id)
+        job.summary = {**job.summary, "complete": complete}
+    ctx.check()
+    return {"complete": True, "message": f"{total} file(s) analyzed ({reused} reused from earlier runs)"}
+
+
+def _area(path):
+    root = get_config().root
+    try:
+        Path(path).relative_to(root)
+        return "library"
+    except ValueError:
+        return "other"
+
+
+# --- Reading the history -----------------------------------------------------------------
+
+
+def runs(session, with_tracks=True):
+    """Analysis runs oldest first, in the shape core.history expects."""
+    jobs = session.scalars(select(Job).where(Job.type == "analyze", Job.status.in_(
+        ("done", "cancelled", "interrupted", "failed", "running"))).order_by(Job.created_at, Job.id)).all()
+    out = []
+    for job in jobs:
+        summary = job.summary or {}
+        tracks = []
+        if with_tracks:
+            tracks = [measurement_row(m) for m in session.scalars(
+                select(Measurement).where(Measurement.job_id == job.id).order_by(Measurement.path)).all()]
+        out.append({
+            "id": job.id, "label": job.legacy_id or job.created_at.strftime("%Y-%m-%d %H:%M"),
+            "scope": summary.get("scope", "file"), "complete": bool(summary.get("complete")),
+            "status": job.status, "config": summary.get("config") or {"input": job.params.get("path", "")},
+            "manifest": summary.get("manifest") or [], "tracks": tracks, "created_at": job.created_at,
+            "legacy": bool(job.legacy_id),
+        })
+    return out
+
+
+def overview(session):
+    """Runs (without tracks), reference candidates with their median, and the current library."""
+    all_runs = runs(session)
+    current = history.current_library(all_runs)
+    listing = []
+    for run in all_runs:
+        listing.append({k: v for k, v in run.items() if k not in ("tracks", "manifest")}
+                       | {"files": len(run["tracks"]), "median_lufs": history.median_lufs(run["tracks"])})
+    references = [r for r in listing if r["scope"] == "folder" and r["complete"] and r["median_lufs"] is not None]
+    return {"runs": listing[::-1], "references": references[::-1], "current": current}
+
+
+def run_tracks(session, job_id):
+    return [measurement_row(m) for m in session.scalars(
+        select(Measurement).where(Measurement.job_id == job_id).order_by(Measurement.path)).all()]
+
+
+def file_history(session, file):
+    """Every measurement of this file: by its path, and by its hash when known."""
+    query = select(Measurement).where(Measurement.path == file.path)
+    if file.sha256:
+        query = select(Measurement).where((Measurement.path == file.path) | (Measurement.sha256 == file.sha256))
+    return [measurement_row(m) for m in session.scalars(query.order_by(Measurement.measured_at)).all()]
+
+
+def library_median(session):
+    """Median LUFS of the latest complete folder analysis (the review's reference)."""
+    refs = overview_references(session)
+    return (refs[0]["median_lufs"], refs[0]["id"]) if refs else (None, None)
+
+
+def overview_references(session):
+    out = []
+    for run in reversed(runs(session)):
+        if run["scope"] == "folder" and run["complete"]:
+            median = history.median_lufs(run["tracks"])
+            if median is not None:
+                out.append({"id": run["id"], "label": run["label"], "median_lufs": median})
+    return out
+
+
+def latest_by_path(session, paths):
+    """The newest measurement of each path (for library tables)."""
+    latest = {}
+    for start in range(0, len(paths), 500):
+        chunk = paths[start:start + 500]
+        for m in session.scalars(select(Measurement).where(Measurement.path.in_(chunk))
+                                 .order_by(Measurement.id)).all():
+            latest[m.path] = m
+    return [{"path": m.path, "status": m.status, "integrated_lufs": m.integrated_lufs,
+             "true_peak_dbtp": m.true_peak_dbtp, "loudness_range_lu": m.loudness_range_lu,
+             "measured_at": m.measured_at} for m in latest.values()]
