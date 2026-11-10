@@ -102,6 +102,7 @@ class FileOp(Base):
     label: Mapped[str] = mapped_column(String, default="")           # trash | inbox | reject | ...
     source: Mapped[str] = mapped_column(String)
     dest: Mapped[str] = mapped_column(String)
+    tags_before: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # tag values replaced by this step (for undo)
 
 
 class Review(Base):

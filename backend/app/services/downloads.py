@@ -26,7 +26,7 @@ def run_review(ctx):
         sources = [Path(p).resolve() for p in settings.sources(s)]
     files, skipped = dl.find_files(sources, time.time(), cfg.settle_seconds)
     versions = audio.tool_versions()
-    items, todo = [], []
+    items = []
     with session_scope() as s:
         for source, path in files:
             stat = path.stat()
@@ -35,37 +35,7 @@ def run_review(ctx):
             item["sha256"] = analysis.cached_sha(s, path, stat)
             items.append(item)
     ctx.progress(0, len(items), f"{len(items)} download(s) found")
-    for i, item in enumerate(items, 1):
-        ctx.check()
-        if not item["sha256"]:
-            item["sha256"] = audio.sha256_file(item["path"])
-        with session_scope() as s:
-            old = analysis.reusable(s, item["sha256"], True, versions["ffmpeg_version"])
-            if old is None:
-                old = analysis.reusable(s, item["sha256"], True, None)
-            if old:
-                item.update(_quality(analysis.measurement_row(old)))
-            else:
-                todo.append(item)
-    measured = 0
-    if todo:
-        ctx.progress(0, len(todo), f"Measuring {len(todo)} new file(s)")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=cfg.workers) as pool:
-            futures = {pool.submit(audio.analyze, Path(item["path"])): item for item in todo}
-            for future in concurrent.futures.as_completed(futures):
-                if ctx.cancelled():
-                    for f in futures:
-                        f.cancel()
-                    ctx.check()
-                item = futures[future]
-                result = future.result()
-                item.update(_quality(result))
-                measured += 1
-                stat = Path(item["path"]).stat()
-                with session_scope() as s:
-                    s.add(analysis.new_measurement(item["path"], result, item["sha256"], stat, ctx.job_id, True,
-                                                   versions=versions))
-                ctx.progress(measured, len(todo), item["name"])
+    measured = _measure(ctx, items, versions, cfg.workers)
     with session_scope() as s:
         seen = set()
         for item in items:
@@ -81,6 +51,8 @@ def run_review(ctx):
         tracks = library.scan(s)
         median, median_run = analysis.library_median(s)
     songs = dl.build_songs(items, dl.library_index(tracks))
+    library_items = _library_items(ctx, songs, tracks, versions, cfg.workers)
+    dl.add_library_comparison(songs, library_items)
     payload = {
         "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "sources": [str(p) for p in sources], "library_median": median, "median_run": median_run,
@@ -94,6 +66,72 @@ def run_review(ctx):
     return {"message": f"{len(items)} file(s), {len(songs)} song(s), {multi} with more than one version; "
                        f"{measured} measured now", "files": len(items), "songs": len(songs),
             "measured": measured, "skipped_recent": len(skipped)}
+
+
+def _measure(ctx, items, versions, workers):
+    """Fill each item with its quality measurement: reused when the same bytes were measured
+    before, otherwise measured now (read-only) and stored. Returns how many were measured now."""
+    todo = []
+    for item in items:
+        ctx.check()
+        if not item["sha256"]:
+            item["sha256"] = audio.sha256_file(item["path"])
+        with session_scope() as s:
+            old = analysis.reusable(s, item["sha256"], True, versions["ffmpeg_version"])
+            if old is None:
+                old = analysis.reusable(s, item["sha256"], True, None)
+            if old:
+                item.update(_quality(analysis.measurement_row(old)))
+            else:
+                todo.append(item)
+    measured = 0
+    if todo:
+        ctx.progress(0, len(todo), f"Measuring {len(todo)} new file(s)")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(audio.analyze, Path(item["path"])): item for item in todo}
+            for future in concurrent.futures.as_completed(futures):
+                if ctx.cancelled():
+                    for f in futures:
+                        f.cancel()
+                    ctx.check()
+                item = futures[future]
+                result = future.result()
+                item.update(_quality(result))
+                measured += 1
+                stat = Path(item["path"]).stat()
+                with session_scope() as s:
+                    s.add(analysis.new_measurement(item["path"], result, item["sha256"], stat, ctx.job_id, True,
+                                                   versions=versions))
+                ctx.progress(measured, len(todo), item["name"])
+    return measured
+
+
+def _library_items(ctx, songs, tracks, versions, workers):
+    """Measured library copies of the downloaded songs, keyed by their library-relative path
+    (the paths in song["in_library"]). Read-only."""
+    by_rel = {t["path"]: t for t in tracks}
+    items = []
+    with session_scope() as s:
+        for rel in sorted({p for song in songs for p in song["in_library"]}):
+            track = by_rel.get(rel)
+            file = Path(track["abs"]) if track else None
+            if file is None or not file.is_file():
+                continue
+            stat = file.stat()
+            row = library.register_file(s, track["abs"], "library")
+            items.append({"path": track["abs"], "rel_path": rel, "name": file.name, "size": stat.st_size,
+                          "mtime_ns": str(stat.st_mtime_ns), "file_id": row.id,
+                          "sha256": analysis.cached_sha(s, file, stat),
+                          "folder": track["folder"], "kind": track["kind"]})
+    if items:
+        ctx.progress(0, len(items), f"Checking {len(items)} library copy(ies)")
+        _measure(ctx, items, versions, workers)
+        with session_scope() as s:
+            for item in items:  # remember the hash so the next review skips hashing again
+                row = s.get(File, item["file_id"])
+                if row.size == item["size"] and row.mtime_ns == item["mtime_ns"]:
+                    row.sha256 = item["sha256"]
+    return {item["rel_path"]: item for item in items}
 
 
 def _quality(row):
@@ -154,6 +192,10 @@ def decide(session, song_key, choice, keep_path=None):
         raise ValueError(f"Unknown choice {choice!r}")
     if choice == "keep" and keep_path not in {v["path"] for v in song["versions"]}:
         raise ValueError("That file is not a version of this song")
+    if choice == "keep":
+        version = next(v for v in song["versions"] if v["path"] == keep_path)
+        if version.get("invalid") or dl.not_mp3_reason(version):
+            raise ValueError("Only MP3 files can be kept. Reject this version instead.")
     if row is None:
         row = Decision(song_key=song_key)
         session.add(row)
@@ -180,8 +222,13 @@ def picks(session, song_keys=None):
         keep = decision.keep_path if decision.choice == "keep" else None
         if keep and keep not in paths:
             continue
-        out.append({"song": song["song"], "keep": keep, "reject": [p for p in paths if p != keep],
-                    "signatures": {v["path"]: [v["size"], v["mtime_ns"]] for v in song["versions"]}})
+        pick = {"song": song["song"], "keep": keep, "reject": [p for p in paths if p != keep],
+                "signatures": {v["path"]: [v["size"], v["mtime_ns"]] for v in song["versions"]}}
+        if keep:
+            version = next(v for v in song["versions"] if v["path"] == keep)
+            pick["artist"], pick["title"] = dl.inbox_name(song, version)
+            pick.update(dl.missing_info(song, version))
+        out.append(pick)
         songs[song["id"]] = paths
     return out, songs
 

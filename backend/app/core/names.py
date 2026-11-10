@@ -77,6 +77,17 @@ def split_version(title):
     return re.sub(r'\s+', ' ', base).strip(), ', '.join(labels), remix
 
 
+def track_file_name(artist, title, suffix):
+    """'Artist - Title.ext' for a file going to the Inbox. Empty when the title is unknown."""
+    def clean(text):
+        return re.sub(r'\s+', ' ', re.sub(r'[/:\x00-\x1f]+', '-', text or '')).strip().lstrip('.').strip()
+    artist, title = clean(artist), clean(title)
+    if not title:
+        return ''
+    name = f'{artist} - {title}' if artist else title
+    return name[:180].rstrip() + suffix.lower()
+
+
 def song_folder_name(song):
     """Folder name for a song's rejected versions (a new folder, never a renamed file)."""
     name = re.sub(r'[/:\x00-\x1f]+', "-", song or "").strip().lstrip(".").strip()

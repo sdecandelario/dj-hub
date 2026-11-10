@@ -13,7 +13,8 @@ router = APIRouter()
 
 
 class AnalyzeBody(BaseModel):
-    path: str
+    path: str | None = None
+    paths: list[str] = []
     reuse: bool = True
 
 
@@ -29,9 +30,15 @@ def run(job_id: int, session=Depends(get_session)):
 
 @router.post("/analysis")
 def start(body: AnalyzeBody):
-    path = Path(body.path).expanduser()
-    if not path.is_absolute():
-        path = get_config().root / path
-    if not path.exists():
-        raise HTTPException(400, f"Not found: {path}")
-    return {"id": runner.submit("analyze", {"path": str(path), "reuse": body.reuse})}
+    raw = body.paths or ([body.path] if body.path else [])
+    if not raw:
+        raise HTTPException(400, "Choose at least one file or folder")
+    paths = []
+    for item in raw:
+        path = Path(item).expanduser()
+        if not path.is_absolute():
+            path = get_config().root / path
+        if not path.exists():
+            raise HTTPException(400, f"Not found: {path}")
+        paths.append(str(path))
+    return {"id": runner.submit("analyze", {"paths": paths, "reuse": body.reuse})}

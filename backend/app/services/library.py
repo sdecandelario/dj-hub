@@ -93,12 +93,16 @@ def make_plan(session, kind, payload, when=None, tracks=None):
         ops = session.scalars(select(FileOp).where(FileOp.batch_id == target.id).order_by(FileOp.seq)).all()
         return lib.plan_undo(cfg.root, cfg.trash, target.legacy_id or str(target.id),
                              [{"action": o.action, "source": o.source, "dest": o.dest,
-                               "trash": o.label == "trash"} for o in ops])
+                               "trash": o.label == "trash", "tags_before": o.tags_before} for o in ops])
     tracks = scan(session) if tracks is None else tracks
     if kind == "apply":
         return lib.plan_apply(cfg.root, tracks, payload.get("items") or [])
     if kind == "remove":
         return lib.plan_remove(cfg.root, cfg.trash, tracks, payload.get("paths") or [], when=when)
+    if kind == "rename":
+        return lib.plan_rename(cfg.root, tracks, payload.get("items") or [])
+    if kind == "tags":
+        return lib.plan_tags(cfg.root, tracks, genre=bool(payload.get("genre")))
     if kind == "intake":
         return lib.plan_intake(cfg.root, settings.sources(session), tracks, payload.get("picks") or [])
     raise BatchError(f"Unknown batch kind {kind!r}")
@@ -121,7 +125,7 @@ def default_label(kind, plan):
     for step in plan.runnable():
         counts[step.label or step.action] = counts.get(step.label or step.action, 0) + 1
     detail = ", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "nothing to do"
-    return {"apply": "Library change", "remove": "Send to Trash", "intake": "Downloads to Inbox/Rejected",
+    return {"apply": "Library change", "remove": "Send to Trash", "intake": "Downloads to Inbox/Rejected", "tags": "Fix tags", "rename": "Rename files",
             "undo": "Undo"}.get(kind, kind) + f" ({detail})"
 
 
@@ -155,13 +159,16 @@ def apply(session_factory, batch_id):
             raise BatchError(refusal)
         seq = [0]
         moved = set()
+        warnings = []
 
         def log(step):
             seq[0] += 1
             moved.add(step.source)
+            if step.note.startswith('Tags not written'):
+                warnings.append(f'{Path(step.dest).name}: {step.note}')
             with session_factory() as s:
                 s.add(FileOp(batch_id=batch_id, seq=seq[0], action=step.action, label=step.label,
-                             source=step.source, dest=step.dest))
+                             source=step.source, dest=step.dest, tags_before=step.tags_before or None))
 
         error = ""
         try:
@@ -189,7 +196,7 @@ def apply(session_factory, batch_id):
                         decision.applied_batch_id = batch.id
             sync_library(session)
             result = {"id": batch.id, "status": batch.status, "error": batch.error, "done": seq[0],
-                      "kind": batch.kind}
+                      "kind": batch.kind, "warnings": warnings}
         if error and not seq[0]:
             raise BatchError(error)
         return result

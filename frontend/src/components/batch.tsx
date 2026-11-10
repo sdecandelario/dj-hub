@@ -14,7 +14,7 @@ const parent = (path: string) => path.split('/').slice(0, -1).join('/')
 
 const VERB: Record<string, string> = {
   inbox: 'To 00 Inbox', reject: 'To 00 Rejected', trash: 'To the Trash', 'trash copy': 'Copy to the Trash',
-  'move back': 'Move back', restore: 'Restore from the Trash', copy: 'Copy', move: 'Move',
+  'move back': 'Move back', restore: 'Restore from the Trash', copy: 'Copy', move: 'Move', tags: 'Fix tags', rename: 'Rename', 'restore tags': 'Restore tags',
 }
 
 function groupSteps(root: string, steps: Step[]) {
@@ -113,7 +113,19 @@ export function BatchProvider({ children }: { children: ReactNode }) {
                   {groupSteps(batch.root, batch.plan.steps).map(([title, steps]) => (
                     <div className="group" key={title}>
                       <h4>{title} ({steps.length})</h4>
-                      <ul>{steps.map(s => <li key={s.source} title={s.source}>{basename(s.source)}</li>)}</ul>
+                      <ul>{steps.map(s => (
+                        <li key={s.source} title={s.source}>
+                          {basename(s.source)}
+                          {basename(s.dest) !== basename(s.source) && (
+                            <div className="renamed" title={s.dest}>→ renamed to <b>{basename(s.dest)}</b></div>
+                          )}
+                          {s.tags && Object.keys(s.tags).length > 0 && (
+                            <div className="renamed">
+                              Tags: {Object.entries({ ...s.fill_tags, ...s.tags }).map(([k, v]) => `${k} = ${v ?? '(removed)'}`).join(' · ')}
+                            </div>
+                          )}
+                        </li>
+                      ))}</ul>
                     </div>
                   ))}
                   {skipped.length > 0 && (
@@ -129,6 +141,9 @@ export function BatchProvider({ children }: { children: ReactNode }) {
                   {result.status === 'applied'
                     ? `Applied ${plural(result.done, 'change')} (batch ${result.id}).`
                     : `Stopped after ${plural(result.done, 'change')}: ${result.error}`}
+                  {result.warnings && result.warnings.length > 0 && (
+                    <ul>{result.warnings.map(w => <li key={w}>{w}</li>)}</ul>
+                  )}
                   {result.kind !== 'undo' && ' Rekordbox: drag the folder onto Playlists, or the new files into the existing playlist.'}
                 </div>
               )}

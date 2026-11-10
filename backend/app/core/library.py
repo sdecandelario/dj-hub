@@ -7,18 +7,19 @@ Layout under the library root:
   Sessions/<session>/            a session: extra copies, any number per song
   files at the root, other folders  unsorted
 
-Rules: never delete (removals go to the Trash), never edit audio or tags,
+Rules: never delete (removals go to the Trash), never edit audio, tags only in batches,
 a song keeps exactly one genre. Every change is planned first (`plan_*`),
 shown to the user, and only then run with `execute`.
 """
 import datetime as dt
+import re
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .audio import quick_fingerprint
-from .names import guess_from_filename, normalize, song_folder_name
-from .tags import read_tags
+from .names import guess_from_filename, normalize, song_folder_name, track_file_name
+from .tags import read_tags, write_tags
 
 AUDIO = {".mp3", ".wav", ".aif", ".aiff", ".flac", ".m4a"}
 GENRES, INBOX, REJECTED, SESSIONS = "Genres", "00 Inbox", "00 Rejected", "Sessions"
@@ -183,6 +184,9 @@ class Step:
     dest: str          # absolute path ('' for skip)
     note: str = ""
     label: str = ""    # intake: inbox | reject; undo: what is being reverted
+    tags: dict = field(default_factory=dict)         # ID3 values to set after the move (None removes)
+    fill_tags: dict = field(default_factory=dict)    # ID3 values to set only when the file has none
+    tags_before: dict | None = None                  # filled when run: what the tags were
 
 
 @dataclass
@@ -339,7 +343,10 @@ def plan_intake(root, sources, tracks, picks):
     """Reviewed downloads: the kept version to 00 Inbox, the others to 00 Rejected/<song>.
 
     picks: [{"song": "Artist - Title", "keep": "/abs/file" | None,
-             "reject": ["/abs/file", ...], "signatures": {"/abs/file": [size, "mtime_ns"]}}]
+             "reject": ["/abs/file", ...], "signatures": {"/abs/file": [size, "mtime_ns"]},
+             "artist": "...", "title": "..."}]
+    The kept file is renamed to 'Artist - Title.ext' when artist/title are given.
+    Rejected files keep their download names.
     A song with any problem is skipped as a whole.
     """
     root = Path(root)
@@ -362,6 +369,8 @@ def plan_intake(root, sources, tracks, picks):
                 path = _inside_sources(sources, raw)
                 if not path.is_file() or path.suffix.lower() not in AUDIO:
                     raise ValueError(f"missing or not an audio file: {raw}")
+                if to == INBOX and path.suffix.lower() != ".mp3":
+                    raise ValueError(f"only MP3 files go to {INBOX}: {raw}")
                 if str(path) in seen:
                     raise ValueError(f"listed twice: {raw}")
                 signature = signatures.get(raw)
@@ -371,11 +380,19 @@ def plan_intake(root, sources, tracks, picks):
             except (ValueError, OSError) as error:
                 own_problems.append(str(error))
                 continue
-            dest = f"{to}/{path.name}"
+            name = path.name
+            if to == INBOX and pick.get("title"):
+                name = track_file_name(pick.get("artist"), pick["title"], path.suffix) or name
+            dest = f"{to}/{name}"
             if (root / dest).exists() or dest in taken:
-                own_problems.append(f"{path.name}: a file with this name is already in {to}")
+                own_problems.append(f"{name}: a file with this name is already in {to}")
                 continue
-            own_steps.append(Step("move", str(path), str(root / dest), label="inbox" if to == INBOX else "reject"))
+            tags, fill = {}, {}
+            if to == INBOX and pick.get("title"):
+                tags = {"artist": pick.get("artist") or "", "title": pick["title"]}
+                fill = {k: pick[k] for k in ("album", "year") if pick.get(k)}
+            own_steps.append(Step("move", str(path), str(root / dest), label="inbox" if to == INBOX else "reject",
+                                  tags=tags, fill_tags=fill))
         if own_problems:
             plan.problems += [f"{song or '(no song name)'}: {p} (song skipped)" for p in own_problems]
             continue
@@ -396,6 +413,44 @@ def plan_intake(root, sources, tracks, picks):
     return plan
 
 
+def plan_rename(root, tracks, items):
+    """Change artist and title of files in 00 Inbox: the file becomes 'Artist - Title.mp3'
+    and the ID3 tags are written to match.
+
+    items: [{"source": rel path, "artist": str, "title": str}]. Only Inbox files, because a song
+    kept elsewhere may have copies, and copies must keep identical bytes."""
+    root = Path(root)
+    known = {t["path"]: t for t in tracks}
+    plan = Plan("rename")
+    taken = set()
+    for item in items:
+        source = item.get("source", "")
+        track = known.get(source)
+        artist, title = (item.get("artist") or "").strip(), (item.get("title") or "").strip()
+        if track is None or track["kind"] != "inbox":
+            plan.problems.append(f"{source}: only files in 00 Inbox can be renamed here")
+            continue
+        if not title:
+            plan.problems.append(f"{source}: the title cannot be empty")
+            continue
+        path = Path(track["abs"])
+        name = track_file_name(artist, title, path.suffix)
+        dest = path.with_name(name)
+        if (dest.exists() and dest != path) or str(dest) in taken:
+            plan.problems.append(f"{source}: a file named {name!r} already exists in 00 Inbox")
+            continue
+        taken.add(str(dest))
+        tags = {"artist": artist or None, "title": title}
+        if dest == path:
+            have = read_tags(path)
+            if have.get("artist", "") == artist and have.get("title", "") == title:
+                continue
+            plan.steps.append(Step("tags", str(path), str(path), tags=tags))
+        else:
+            plan.steps.append(Step("move", str(path), str(dest), label="rename", tags=tags))
+    return plan
+
+
 def plan_undo(root, trash, batch_label, ops):
     """Revert applied operations (newest first). ops: [{"action", "source", "dest"}] with absolute paths.
 
@@ -406,6 +461,13 @@ def plan_undo(root, trash, batch_label, ops):
     plan = Plan("undo")
     for op in reversed(ops):
         source, dest = Path(op["source"]), Path(op["dest"])
+        if op["action"] == "tags":
+            if not dest.exists():
+                plan.problems.append(f"no longer there: {dest}")
+            elif op.get("tags_before"):
+                plan.steps.append(Step("tags", str(dest), str(dest), label="restore tags",
+                                       tags=op["tags_before"]))
+            continue
         if op["action"] == "copy":
             try:
                 rel = dest.relative_to(root)
@@ -413,7 +475,8 @@ def plan_undo(root, trash, batch_label, ops):
                 rel = Path(dest.name)
             step = Step("move", str(dest), str(trash_dir / rel), label="trash copy")
         else:
-            step = Step("move", str(dest), str(source), label="restore" if op.get("trash") else "move back")
+            step = Step("move", str(dest), str(source), label="restore" if op.get("trash") else "move back",
+                        tags=op.get("tags_before") or {})
         if not Path(step.source).exists():
             plan.problems.append(f"no longer there: {step.source}")
             continue
@@ -421,6 +484,39 @@ def plan_undo(root, trash, batch_label, ops):
             plan.problems.append(f"something is already at {step.dest}")
             continue
         plan.steps.append(step)
+    return plan
+
+
+def plan_tags(root, tracks, genre=False):
+    """Fix ID3 tags in place so Rekordbox shows them right: a missing artist or title is taken
+    from the file name. With `genre=True` the genre tag also becomes the name of the song's
+    genre folder (this rewrites most files, so it is a separate choice).
+
+    Every copy of a song gets the same edit (copies are byte-identical, and song identity is
+    the file fingerprint, which includes the tag bytes). Rejected versions are left alone."""
+    plan = Plan("tags")
+    for copies in by_song(tracks).values():
+        copies = active(copies)
+        if not copies or not copies[0]["abs"].lower().endswith(".mp3"):
+            continue
+        first = sorted(copies, key=lambda c: c["path"])[0]
+        have = read_tags(first["abs"])
+        guess = guess_from_filename(Path(first["path"]).stem)
+        # The file name is 'Artist - Title': everything after the first ' - ' is the title.
+        stem = re.sub(r"^\s*\(?\d{1,3}\)?\s*[-.\s_]\s*", "", Path(first["path"]).stem)
+        if guess.get("artist") and " - " in stem:
+            guess["title"] = stem.split(" - ", 1)[1].strip()
+        wanted = {}
+        for key in ("artist", "title"):
+            if not have.get(key) and guess.get(key):
+                wanted[key] = guess[key]
+        genres = genre_folders(copies)
+        if genre and len(genres) == 1 and have.get("genre") != genres[0]:
+            wanted["genre"] = genres[0]
+        if not wanted:
+            continue
+        for copy in sorted(copies, key=lambda c: c["path"]):
+            plan.steps.append(Step("tags", copy["abs"], copy["abs"], tags=dict(wanted)))
     return plan
 
 
@@ -445,6 +541,15 @@ def execute(root, plan, on_done=None):
     done = []
     for step in plan.runnable():
         dest = Path(step.dest)
+        if step.action == "tags":
+            try:
+                step.tags_before = write_tags(dest, step.tags, step.fill_tags)
+            except Exception as error:
+                step.note = f"Tags not written: {error}"
+            done.append(step)
+            if on_done:
+                on_done(step)
+            continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             raise FileExistsError(f"refusing to overwrite {dest}")
@@ -453,6 +558,11 @@ def execute(root, plan, on_done=None):
         else:
             shutil.move(step.source, str(dest))
             _remove_empty_dirs(root, Path(step.source).parent)
+        if step.tags or step.fill_tags:
+            try:
+                step.tags_before = write_tags(dest, step.tags, step.fill_tags)
+            except Exception as error:  # the move is done and logged; report, do not stop the batch
+                step.note = f"Tags not written: {error}"
         done.append(step)
         if on_done:
             on_done(step)

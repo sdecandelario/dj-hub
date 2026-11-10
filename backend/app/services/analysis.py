@@ -54,22 +54,46 @@ def reusable(session, sha, full, ffmpeg_version):
     return None
 
 
+def collect_paths(sources):
+    """Audio files under each source (a file or a folder), sorted, without duplicates
+    when sources overlap (for example the whole library plus one genre)."""
+    found = set()
+    for source in sources:
+        if source.is_file():
+            found.add(source)
+            continue
+        found.update(p for p in source.rglob("*") if p.is_file() and p.suffix.lower() in audio.EXT
+                     and not any(part.startswith(".") for part in p.relative_to(source).parts))
+    return sorted(found)
+
+
+def analysis_sources(params):
+    """params["paths"] (a list) or params["path"] (one), resolved; nested sources are dropped."""
+    raw = params.get("paths") or [params["path"]]
+    sources = []
+    for item in dict.fromkeys(Path(p).expanduser().resolve() for p in raw):
+        if not item.exists() or (item.is_file() and item.suffix.lower() not in audio.EXT):
+            raise ValueError(f"Input does not exist or format is unsupported: {item}")
+        sources.append(item)
+    return [s for s in sources if not any(o != s and o.is_dir() and s.is_relative_to(o) for o in sources)]
+
+
 @handler("analyze")
 def run_analysis(ctx):
-    """params: {"path": file or folder, "reuse": true}. Measuring is read-only."""
+    """params: {"path": file or folder} or {"paths": [files or folders]}, "reuse": true.
+    Measuring is read-only."""
     missing = audio.missing_tools()
     if missing:
         raise RuntimeError(f"Missing executable: {', '.join(missing)}")
-    source = Path(ctx.params["path"]).expanduser().resolve()
-    if not source.exists() or (source.is_file() and source.suffix.lower() not in audio.EXT):
-        raise ValueError("Input does not exist or format is unsupported")
-    paths = [source] if source.is_file() else sorted(
-        p for p in source.rglob("*") if p.is_file() and p.suffix.lower() in audio.EXT
-        and not any(part.startswith(".") for part in p.relative_to(source).parts))
+    sources = analysis_sources(ctx.params)
+    if not sources:
+        raise ValueError("Nothing to analyze")
+    paths = collect_paths(sources)
     versions = audio.tool_versions()
-    scope = "file" if source.is_file() else "folder"
-    summary = {"scope": scope, "input": str(source), "manifest": [str(p) for p in paths],
-               "config": {"input": str(source), **versions,
+    scope = "file" if len(sources) == 1 and sources[0].is_file() else "folder"
+    inputs = [str(s) for s in sources]
+    summary = {"scope": scope, "input": "; ".join(inputs), "manifest": [str(p) for p in paths],
+               "config": {"input": "; ".join(inputs), "inputs": inputs, **versions,
                           "filter": "loudnorm=print_format=json; first audio stream"}}
     with session_scope() as s:
         job = s.get(Job, ctx.job_id)

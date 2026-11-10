@@ -70,3 +70,41 @@ def read_tags(path):
     if re.fullmatch(r"\(\d+\)", genre):  # numeric ID3v1-style genre reference
         tags.pop("genre")
     return {k: v for k, v in tags.items() if v}
+
+
+# --- Writing (only used by batches: files just moved to the Inbox, and "tags" batches) ----------------------
+
+FRAMES = {"artist": "TPE1", "title": "TIT2", "album": "TALB", "year": "TDRC", "genre": "TCON"}
+
+
+def write_tags(path, values, fill=None):
+    """Set ID3v2.3 text frames and return the values they had before ({key: old text or None}),
+    so the change can be undone. `values` overwrites; `fill` only sets keys that are empty.
+    A value of None removes the frame. Audio data is not touched."""
+    from mutagen import id3
+
+    try:
+        tag = id3.ID3(path)
+    except id3.ID3NoHeaderError:
+        tag = id3.ID3()
+
+    def current(key):
+        frame = tag.get(FRAMES[key])
+        return " / ".join(str(t) for t in frame.text) if frame else None
+
+    wanted = dict(values or {})
+    for key, value in (fill or {}).items():
+        if value and not current(key):
+            wanted[key] = value
+    before = {}
+    for key, value in wanted.items():
+        old = current(key)
+        if old == value or (old is None and not value):
+            continue
+        before[key] = old
+        tag.delall(FRAMES[key])
+        if value:
+            tag.add(getattr(id3, FRAMES[key])(encoding=1, text=[str(value)]))
+    if before:
+        tag.save(path, v2_version=3)
+    return before

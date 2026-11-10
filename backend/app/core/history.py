@@ -1,6 +1,6 @@
 """Loudness history across analysis runs (ported from DJ_Loudness_Analyzer/dashboard.py).
 
-A run is {"id", "scope": file|folder, "complete", "config": {"input"}, "manifest": [paths],
+A run is {"id", "scope": file|folder, "complete", "config": {"input", "inputs"?}, "manifest": [paths],
 "tracks": [rows with path, sha256, status, integrated_lufs, ...]}, oldest first.
 """
 import statistics
@@ -26,10 +26,10 @@ def current_library(runs):
         if run["scope"] == "test":
             continue
         if run["scope"] == "folder" and run["complete"]:
-            root = Path(run["config"]["input"])
+            roots = [Path(r) for r in run["config"].get("inputs") or [run["config"]["input"]]]
             present = set(run["manifest"])
             for path, row in current.items():
-                if Path(path).is_relative_to(root):
+                if any(Path(path).is_relative_to(root) for root in roots):
                     row["missing"] = path not in present
         for original in run["tracks"]:
             row = dict(original, run_id=run["id"], missing=False)

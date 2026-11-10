@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type AnalysisOverview, type Measurement, type Tree } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
 import { isRunning, startJob, useActiveJobs } from '../components/jobs'
@@ -37,6 +37,77 @@ function annotate(row: Measurement, ref: number | null): Row {
 
 const REF_KEY = 'dj-hub:analysis-reference'
 
+type Target = { label: string; path: string }
+type Group = { title: string; items: Target[] }
+
+/** A dropdown of checkboxes for picking several folders. Choosing the whole library covers everything else. */
+function FolderPicker({ groups, whole, selected, onChange }: {
+  groups: Group[]; whole: Target; selected: string[]; onChange: (paths: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close) }
+  }, [open])
+  const all = selected.includes(whole.path)
+  const set = new Set(selected)
+  const toggle = (paths: string[], on: boolean) => {
+    const next = new Set(set)
+    for (const p of paths) on ? next.add(p) : next.delete(p)
+    onChange([...next])
+  }
+  const labels = groups.flatMap(g => g.items).filter(t => set.has(t.path)).map(t => t.label)
+  const summary = all ? whole.label : !labels.length ? 'Choose what to analyze'
+    : labels.length <= 2 ? labels.join(', ') : `${labels.length} folders`
+  return (
+    <div className="picker" ref={box}>
+      <button type="button" className="picker-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>{summary}</span><span aria-hidden>▾</span>
+      </button>
+      {open && (
+        <div className="picker-menu">
+          <label className="picker-item strong">
+            <input type="checkbox" checked={all} onChange={e => onChange(e.target.checked ? [whole.path] : [])} />
+            {whole.label}
+          </label>
+          {groups.map(g => {
+            const paths = g.items.map(t => t.path)
+            const every = paths.length > 0 && paths.every(p => set.has(p))
+            return (
+              <div key={g.title} className="picker-group">
+                <div className="picker-head">
+                  <span>{g.title}</span>
+                  {paths.length > 1 && (
+                    <button type="button" className="small ghost" disabled={all} onClick={() => toggle(paths, !every)}>
+                      {every ? 'Clear' : 'All'}
+                    </button>
+                  )}
+                </div>
+                {g.items.map(t => (
+                  <label key={t.path} className="picker-item">
+                    <input type="checkbox" disabled={all} checked={all || set.has(t.path)}
+                      onChange={e => toggle([t.path], e.target.checked)} />
+                    {t.label}
+                  </label>
+                ))}
+              </div>
+            )
+          })}
+          {selected.length > 0 && (
+            <div className="picker-foot"><button type="button" className="small ghost" onClick={() => onChange([])}>Clear selection</button></div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Analysis() {
   const jobs = useActiveJobs()
   const { data, error } = useQuery({ queryKey: ['analysis'], queryFn: () => api.get<AnalysisOverview>('/analysis') })
@@ -46,7 +117,7 @@ export default function Analysis() {
   const [filter, setFilter] = useState<'all' | 'priority' | 'level' | 'dynamic' | 'missing'>('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<{ key: keyof Row; dir: 1 | -1 }>({ key: 'integrated_lufs', dir: 1 })
-  const [target, setTarget] = useState('')
+  const [targets, setTargets] = useState<string[]>([])
   const runTracks = useQuery({
     queryKey: ['analysis', 'run', view],
     queryFn: () => api.get<Measurement[]>(`/analysis/runs/${view}`),
@@ -75,9 +146,12 @@ export default function Analysis() {
     </th>
   )
   const root = tree.data?.root ?? ''
-  const targets = [['Whole library', root], ['00 Inbox', `${root}/00 Inbox`],
-    ...(tree.data?.genres ?? []).map(g => [g, `${root}/Genres/${g}`]),
-    ...(tree.data?.sessions ?? []).map(s => [`Session: ${s}`, `${root}/Sessions/${s}`])]
+  const whole: Target = { label: 'Whole library', path: root }
+  const groups: Group[] = [
+    { title: 'Library', items: [{ label: '00 Inbox', path: `${root}/00 Inbox` }] },
+    { title: 'Genres', items: (tree.data?.genres ?? []).map(g => ({ label: g, path: `${root}/Genres/${g}` })) },
+    { title: 'Sessions', items: (tree.data?.sessions ?? []).map(x => ({ label: x, path: `${root}/Sessions/${x}` })) },
+  ].filter(g => g.items.length)
 
   return (
     <>
@@ -87,11 +161,9 @@ export default function Analysis() {
           <p className="muted">LUFS, true peak and loudness range for each file. Every run is kept as history. Audio files are only read.</p>
         </div>
         <div className="row">
-          <select value={target} onChange={e => setTarget(e.target.value)}>
-            <option value="">Choose what to analyze</option>
-            {targets.map(([label, path]) => <option key={path} value={path}>{label}</option>)}
-          </select>
-          <button className="primary" disabled={!target || isRunning(jobs, 'analyze')} onClick={() => startJob('analyze', { path: target })}>
+          <FolderPicker groups={groups} whole={whole} selected={targets} onChange={setTargets} />
+          <button className="primary" disabled={!root || !targets.length || isRunning(jobs, 'analyze')}
+            onClick={() => startJob('analyze', { paths: targets.includes(root) ? [root] : targets })}>
             Analyze
           </button>
         </div>

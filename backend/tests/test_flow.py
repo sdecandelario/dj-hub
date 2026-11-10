@@ -110,3 +110,47 @@ def test_api_smoke(client, env):
     assert client.get("/api/summary").json()["inbox"] == 0
     assert Path(env.root / "Genres" / "Synth-Pop & New Wave" / song.name).exists()
     assert client.get("/api/library/tree").json()["genres"] == ["EBM & Industrial", "Synth-Pop & New Wave"]
+
+
+def test_analysis_of_several_folders_is_one_run(env):
+    ebm = real_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Liebe.mp3")
+    wave = real_audio(env.root / "Genres" / "Post-Punk & Dark Wave" / "Boy Harsher - Pain.mp3", frequency=300)
+    real_audio(env.root / "Genres" / "Other" / "Skip - Me.mp3")
+    folders = [str(ebm.parent), str(wave.parent), str(ebm.parent)]
+    job = runner.run_sync("analyze", {"paths": folders}, echo=None)
+    with session_scope() as s:
+        assert sorted(r["filename"] for r in analysis.run_tracks(s, job)) == sorted([ebm.name, wave.name])
+        run = next(r for r in analysis.runs(s) if r["id"] == job)
+        assert run["scope"] == "folder" and run["complete"]
+        assert run["config"]["inputs"] == [str(ebm.parent.resolve()), str(wave.parent.resolve())]
+    # Nested folders are measured once: the library root covers the genre.
+    job = runner.run_sync("analyze", {"paths": [str(env.root), str(ebm.parent)]}, echo=None)
+    with session_scope() as s:
+        assert len(analysis.run_tracks(s, job)) == 3
+
+
+def test_missing_files_are_flagged_under_any_input_folder(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    gone = a / "gone.mp3"
+    row = {"path": str(gone), "status": "OK", "integrated_lufs": -12.0, "true_peak_dbtp": 0.1,
+           "loudness_range_lu": 3.0, "sha256": None}
+    first = {"id": 1, "scope": "file", "complete": True, "config": {"input": str(gone)},
+             "manifest": [str(gone)], "tracks": [row]}
+    second = {"id": 2, "scope": "folder", "complete": True,
+              "config": {"input": f"{b}; {a}", "inputs": [str(b), str(a)]}, "manifest": [], "tracks": []}
+    assert history.current_library([first, second])[0]["missing"]
+
+
+def test_downloads_review_compares_with_the_library_copy(env):
+    lib_copy = real_audio(env.root / "Genres" / "EBM & Industrial" / "Nitzer Ebb - Join In The Chant.mp3",
+                          bitrate="96k", artist="Nitzer Ebb", title="Join In The Chant")
+    before = lib_copy.stat().st_mtime_ns
+    real_audio(env.downloads / "Nitzer Ebb - Join In The Chant.mp3", bitrate="320k")
+    runner.run_sync("review_downloads", {}, echo=None)
+    with session_scope() as s:
+        song = downloads.review_view(s)["songs"][0]
+    assert song["in_library"] == [str(lib_copy.relative_to(env.root))]
+    assert [v["path"] for v in song["library_versions"]] == [str(lib_copy.resolve())]
+    assert song["library_versions"][0]["file_id"]
+    assert song["versions"][0]["vs_library"]["verdict"] == "better"
+    assert lib_copy.stat().st_mtime_ns == before   # the library file is only read

@@ -133,6 +133,10 @@ def cmd_remove(args):
     run_change("remove", {"paths": args.paths}, args.apply)
 
 
+def cmd_fix_tags(args):
+    run_change("tags", {"genre": args.genre}, args.apply)
+
+
 def cmd_intake(args):
     run_change("intake", {"picks": _load(args.picks)}, args.apply)
 
@@ -189,9 +193,9 @@ def cmd_review(args):
 
 
 def cmd_analyze(args):
-    path = Path(args.path).expanduser()
-    path = path if path.is_absolute() else get_config().root / path
-    runner.run_sync("analyze", {"path": str(path)}, echo=print)
+    paths = [Path(p).expanduser() for p in args.paths]
+    paths = [str(p if p.is_absolute() else get_config().root / p) for p in paths]
+    runner.run_sync("analyze", {"paths": paths}, echo=print)
 
 
 def cmd_refresh(args):
@@ -228,6 +232,10 @@ def main(argv=None):
     p.add_argument("paths", nargs="+", help="files or folders, relative to the root")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(func=cmd_remove)
+    p = sub.add_parser("fix-tags", help="fill missing artist/title tags from file names and optionally set genre tags to the genre folder")
+    p.add_argument("--genre", action="store_true", help="also set the genre tag to the genre folder name")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(func=cmd_fix_tags)
     p = sub.add_parser("intake", help="move reviewed downloads (picks JSON) to 00 Inbox / 00 Rejected")
     p.add_argument("picks")
     p.add_argument("--apply", action="store_true")
@@ -245,8 +253,8 @@ def main(argv=None):
     sub.add_parser("dupes", help="duplicate songs").set_defaults(func=cmd_dupes)
     sub.add_parser("index", help="JSON of every library file").set_defaults(func=cmd_index)
     sub.add_parser("review", help="measure and group the downloads (read-only)").set_defaults(func=cmd_review)
-    p = sub.add_parser("analyze", help="loudness analysis of a file or folder (read-only)")
-    p.add_argument("path")
+    p = sub.add_parser("analyze", help="loudness analysis of files or folders, in one run (read-only)")
+    p.add_argument("paths", nargs="+", metavar="path")
     p.set_defaults(func=cmd_analyze)
     sub.add_parser("refresh-playlists", help="read the Spotify playlists and match them").set_defaults(
         func=cmd_refresh)

@@ -4,10 +4,52 @@ import { useSearchParams } from 'react-router-dom'
 import { api, audioUrl, type Batch, type FileDetail, type LibraryFile, type Tree } from '../api'
 import { useBatch } from '../components/batch'
 import { HistoryChart } from '../components/charts'
+import { PlayerBar, usePlayer } from '../components/player'
 import { startJob } from '../components/jobs'
 import { Badge, Empty, ErrorNote, num, plural, StatusBadge, when } from '../components/ui'
 
-const GENRES = 'Genres', SESSIONS = 'Sessions'
+const GENRES = 'Genres', SESSIONS = 'Sessions', INBOX = '00 Inbox'
+
+// Moving to a genre or the Inbox changes where the song lives; a session holds extra copies.
+const defaultAction = (to: string) => (to.startsWith(`${SESSIONS}/`) ? 'copy' : 'move')
+
+function MoveBar({ tree, files, onClear }: { tree: Tree; files: LibraryFile[]; onClear: () => void }) {
+  const batch = useBatch()
+  const [to, setTo] = useState('')
+  const [newSession, setNewSession] = useState('')
+  const [action, setAction] = useState<'move' | 'copy'>('move')
+  const target = to === 'new' ? (newSession.trim() && `${SESSIONS}/${newSession.trim()}`) : to
+  const pickTarget = (value: string) => { setTo(value); if (value !== 'new') setAction(defaultAction(value)) }
+  const plan = () => target && batch.preview(() => api.post<Batch>('/batches/preview', {
+    kind: 'apply', payload: { items: files.map(f => ({ source: f.rel_path, to: target, action })) },
+  }))
+  return (
+    <div className="panel row" style={{ marginBottom: 10, padding: '8px 12px' }}>
+      <b>{plural(files.length, 'song')} selected</b>
+      <span className="spacer" />
+      <select value={action} onChange={e => setAction(e.target.value as 'move' | 'copy')}>
+        <option value="move">Move</option>
+        <option value="copy">Copy</option>
+      </select>
+      <span>to</span>
+      <select value={to} onChange={e => pickTarget(e.target.value)}>
+        <option value="">Choose a folder</option>
+        <option value={INBOX}>{INBOX}</option>
+        <optgroup label="Genres">{tree.genres.map(g => <option key={g} value={`${GENRES}/${g}`}>{g}</option>)}</optgroup>
+        <optgroup label="Sessions">
+          {tree.sessions.map(s => <option key={s} value={`${SESSIONS}/${s}`}>{s}</option>)}
+          <option value="new">New session…</option>
+        </optgroup>
+      </select>
+      {to === 'new' && (
+        <input value={newSession} onChange={e => { setNewSession(e.target.value); setAction('copy') }}
+          placeholder="Session name" autoFocus />
+      )}
+      <button className="small primary" disabled={!target} onClick={plan}>Preview</button>
+      <button className="small ghost" onClick={onClear}>Clear</button>
+    </div>
+  )
+}
 
 function FolderTree({ tree, kind, folder, onPick }: {
   tree: Tree; kind: string; folder: string; onPick: (kind: string, folder: string) => void
@@ -131,7 +173,10 @@ export default function Library() {
   const folder = params.get('folder') ?? ''
   const selected = Number(params.get('file')) || null
   const [search, setSearch] = useState('')
+  const player = usePlayer()
+  const [edits, setEdits] = useState<Record<string, { artist?: string; title?: string }>>({})
   const [genres, setGenres] = useState<Record<string, string>>({})
+  const [checked, setChecked] = useState<Set<string>>(new Set())
   const batch = useBatch()
   const tree = useQuery({ queryKey: ['tree'], queryFn: () => api.get<Tree>('/library/tree') })
   const files = useQuery({
@@ -139,7 +184,7 @@ export default function Library() {
     queryFn: () => api.get<LibraryFile[]>(`/library/files?${new URLSearchParams({
       ...(kind && { kind }), ...(folder && { folder }), ...(search && { q: search }) })}`),
   })
-  const pick = (k: string, f: string) => { setGenres({}); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
+  const pick = (k: string, f: string) => { setGenres({}); setEdits({}); setChecked(new Set()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)
     if (id) next.set('file', String(id)); else next.delete('file')
@@ -150,7 +195,25 @@ export default function Library() {
     kind: 'apply',
     payload: { items: Object.entries(genres).filter(([, g]) => g).map(([rel, g]) => ({ source: rel, to: `${GENRES}/${g}`, action: 'move' })) },
   }))
+  const fixTags = (genre: boolean) => batch.preview(() => api.post<Batch>('/batches/preview', { kind: 'tags', payload: { genre } }))
+  const renames = (files.data ?? []).filter(f => edits[f.rel_path] && (
+    (edits[f.rel_path].artist ?? f.artist ?? '') !== (f.artist ?? '') || (edits[f.rel_path].title ?? f.title ?? '') !== (f.title ?? '')))
+  const saveNames = () => batch.preview(async () => {
+    const b = await api.post<Batch>('/batches/preview', { kind: 'rename', payload: {
+      items: renames.map(f => ({ source: f.rel_path, artist: edits[f.rel_path].artist ?? f.artist ?? '', title: edits[f.rel_path].title ?? f.title ?? '' })) } })
+    setEdits({})
+    return b
+  })
   const chosen = Object.values(genres).filter(Boolean).length
+  // Only files still listed count (after a move they leave this folder).
+  const checkedFiles = files.data?.filter(f => checked.has(f.rel_path)) ?? []
+  const allChecked = !!files.data?.length && checkedFiles.length === files.data.length
+  const toggle = (rel: string) => {
+    const next = new Set(checked)
+    if (next.has(rel)) next.delete(rel); else next.add(rel)
+    setChecked(next)
+  }
+  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(files.data?.map(f => f.rel_path)))
   const title = kind ? (path || 'Library root') : 'Whole library'
 
   return (
@@ -178,13 +241,20 @@ export default function Library() {
                 Analyze {kind ? 'folder' : 'library'}
               </button>
             )}
+            {!kind && !search && (<>
+              <button className="small" title="Fill missing artist and title tags from the file names" onClick={() => fixTags(false)}>Fix missing tags</button>
+              <button className="small" title="Set every genre tag to its genre folder name" onClick={() => fixTags(true)}>Fix tags + genre</button>
+            </>)}
             {kind === 'rejected' && !!files.data?.length && (
               <button className="small danger" onClick={() => batch.preview(() => api.post<Batch>('/batches/preview', { kind: 'remove', payload: { paths: ['00 Rejected'] } }))}>
                 Empty 00 Rejected
               </button>
             )}
             {kind === 'inbox' && (
-              <button className="small primary" disabled={!chosen} onClick={sortInbox}>Move {chosen || ''} to genres</button>
+              <>
+                <button className="small" disabled={!renames.length} onClick={saveNames}>Save {renames.length || ''} name change{renames.length === 1 ? '' : 's'}</button>
+                <button className="small primary" disabled={!chosen} onClick={sortInbox}>Move {chosen || ''} to genres</button>
+              </>
             )}
           </div>
           {kind === 'inbox' && !!files.data?.length && (
@@ -193,19 +263,47 @@ export default function Library() {
           {kind === 'rejected' && !!files.data?.length && (
             <p className="muted">Versions not chosen. Listen once more if in doubt, then send them to the Trash.</p>
           )}
+          {tree.data && checkedFiles.length > 0 && (
+            <MoveBar tree={tree.data} files={checkedFiles} onClear={() => setChecked(new Set())} />
+          )}
           <div className="panel flush table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Artist</th><th>Title</th>{!kind && <th>Folder</th>}{kind === 'rejected' && <th>Song</th>}
+                  <th className="check">
+                    <input type="checkbox" checked={allChecked} onChange={toggleAll} title="Select all"
+                      ref={el => { if (el) el.indeterminate = checkedFiles.length > 0 && !allChecked }} />
+                  </th>
+                  <th></th><th>Artist</th><th>Title</th>{!kind && <th>Folder</th>}{kind === 'rejected' && <th>Song</th>}
                   <th className="num">LUFS</th><th className="num">dBTP</th>{kind === 'inbox' && <th>Genre</th>}
                 </tr>
               </thead>
               <tbody>
                 {files.data?.map(f => (
                   <tr key={f.id} className={`clickable${selected === f.id ? ' selected' : ''}`} onClick={() => select(f.id)}>
-                    <td>{f.artist || <span className="muted">—</span>}</td>
-                    <td title={f.rel_path}>{f.title || f.name}{f.genre_tag && <> <small className="muted">{f.genre_tag}</small></>}</td>
+                    <td className="check" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={checked.has(f.rel_path)} onChange={() => toggle(f.rel_path)} />
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <button className={`small${player.isPlaying(f.id) ? ' on' : ''}`} aria-label="Play"
+                        onClick={() => player.play({ song: String(f.id), file: f.id, title: f.title || f.name, name: f.rel_path })}>
+                        {player.isPlaying(f.id) ? '❚❚' : '▶'}
+                      </button>
+                    </td>
+                    {kind === 'inbox' ? (<>
+                      <td onClick={e => e.stopPropagation()}>
+                        <input className="inline-edit" value={edits[f.rel_path]?.artist ?? f.artist ?? ''} aria-label="Artist"
+                          onChange={e => setEdits({ ...edits, [f.rel_path]: { ...edits[f.rel_path], artist: e.target.value } })} />
+                      </td>
+                      <td title={f.rel_path} onClick={e => e.stopPropagation()}>
+                        <input className="inline-edit" value={edits[f.rel_path]?.title ?? f.title ?? f.name} aria-label="Title"
+                          onChange={e => setEdits({ ...edits, [f.rel_path]: { ...edits[f.rel_path], title: e.target.value } })} />
+                        {f.genre_tag && <> <small className="muted">{f.genre_tag}</small></>}
+                      </td>
+                    </>) : (<>
+                      <td>{f.artist || <span className="muted">—</span>}</td>
+                      <td title={f.rel_path}>{f.title || f.name}{f.genre_tag && <> <small className="muted">{f.genre_tag}</small></>}</td>
+                    </>)}
                     {!kind && <td><small>{f.kind === 'genre' || f.kind === 'session' ? f.folder : f.kind}</small></td>}
                     {kind === 'rejected' && <td><small>{f.folder}</small></td>}
                     <td className="num">{num(f.loudness?.integrated_lufs)}</td>
@@ -227,6 +325,7 @@ export default function Library() {
         </div>
         {selected && tree.data && <Detail id={selected} tree={tree.data} onClose={() => select(null)} />}
       </div>
+      {player.track && <div className="bottombar"><PlayerBar player={player} /></div>}
     </>
   )
 }

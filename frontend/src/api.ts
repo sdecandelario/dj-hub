@@ -55,7 +55,9 @@ export type Job = {
   log?: string
 }
 
-export type Step = { action: 'copy' | 'move' | 'skip'; source: string; dest: string; note: string; label: string }
+export type Step = { action: 'copy' | 'move' | 'skip'; source: string; dest: string; note: string; label: string
+  /** ID3 tags written after the move (null removes), and tags written only when empty. */
+  tags?: Record<string, string | null>; fill_tags?: Record<string, string> }
 
 export type Batch = {
   id: number
@@ -74,7 +76,7 @@ export type Batch = {
   steps?: number
 }
 
-export type ApplyResult = { id: number; status: string; error: string; done: number; kind: string }
+export type ApplyResult = { id: number; status: string; error: string; done: number; kind: string; warnings?: string[] }
 
 export type Loudness = {
   path: string
@@ -178,13 +180,31 @@ export type Version = {
   has_art: boolean
   hf_gap_19k_db: number | null
   version_label: string
+  /** Set when this file was grouped here because its name looks like the same song. */
+  name_differs?: boolean
+  listed_as?: string
   identical_to: string[]
   same_audio_as: string[]
   likely_transcode: boolean
   other_edit: boolean
+  /** Not an MP3: shown with a notice, can only be rejected. */
+  invalid?: boolean
   warnings: string[]
   rank: number
+  /** Compared with the best library copy; missing when the song is not in the library. */
+  vs_library?: LibraryVerdict
 }
+
+export type LibraryVerdict = {
+  verdict: 'better' | 'worse' | 'similar' | 'same'
+  reason: string
+  library_path: string
+  length_differs: boolean
+}
+
+export type LibraryVersion = Pick<Version, 'path' | 'name' | 'file_id' | 'sha256' | 'status' | 'integrated_lufs'
+  | 'true_peak_dbtp' | 'loudness_range_lu' | 'duration_seconds' | 'codec' | 'bitrate_kbps' | 'album' | 'year'
+  | 'hf_gap_19k_db' | 'likely_transcode' | 'warnings'> & { rel_path: string; folder: string; kind: string }
 
 export type Song = {
   id: string
@@ -193,6 +213,10 @@ export type Song = {
   song: string
   suggested: string | null
   in_library: string[]
+  /** Files with different names were grouped as one song. */
+  grouped_by_name?: boolean
+  /** Measured library copies, best first (missing in reviews made before this check existed). */
+  library_versions?: LibraryVersion[]
   versions: Version[]
   gone: boolean
   decision: { choice: 'keep' | 'reject' | 'later'; keep_path: string | null; decided_at: string } | null

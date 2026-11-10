@@ -86,7 +86,7 @@ export default function History() {
                 <Fragment key={j.id}>
                   <tr className="clickable" onClick={() => setOpen(open === j.id ? null : j.id)}>
                     <td>{j.id}</td>
-                    <td>{JOB_LABELS[j.type] ?? j.type}{typeof j.params.path === 'string' && <><br /><small className="mono">{j.params.path}</small></>}</td>
+                    <td>{JOB_LABELS[j.type] ?? j.type}{(Array.isArray(j.params.paths) || typeof j.params.path === 'string') && <><br /><small className="mono">{Array.isArray(j.params.paths) ? j.params.paths.join('; ') : String(j.params.path)}</small></>}</td>
                     <td><StatusBadge status={j.status} /></td>
                     <td><small>{j.total ? `${j.done}/${j.total} · ` : ''}{j.message}</small></td>
                     <td><small>{when(j.started_at ?? j.created_at)}</small></td>
