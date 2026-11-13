@@ -144,6 +144,20 @@ def _quality(row):
     return out
 
 
+def pending(session):
+    """Audio files waiting in the download folders, counted without measuring anything.
+    Songs are estimated from file names; `new` counts files the latest review has not seen."""
+    sources = [Path(p).resolve() for p in settings.sources(session)]
+    files, _ = dl.find_files(sources, time.time(), 0)
+    review = latest_review(session)
+    reviewed = {v["path"] for song in (review.payload["songs"] if review else []) for v in song["versions"]}
+    paths = [str(path.resolve()) for _, path in files]
+    songs = {(dl.normalize(a), dl.normalize(t)) for a, t, _, _ in
+             (dl.song_identity({"path": p}) for p in paths)}
+    return {"files": len(paths), "songs": len(songs), "new": sum(p not in reviewed for p in paths),
+            "reviewed_at": review.created_at if review else None}
+
+
 def latest_review(session):
     return session.scalar(select(Review).order_by(Review.id.desc()).limit(1))
 

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { api, type Batch, type LibraryVerdict, type LibraryVersion, type Review, type Song, type Version } from '../api'
+import { api, type Batch, type PendingDownloads, type LibraryVerdict, type LibraryVersion, type Review, type Song, type Version } from '../api'
 import { useBatch } from '../components/batch'
 import { PlayerBar, usePlayer, type Player } from '../components/player'
 import { AnalyzeButton, isRunning, startJob, useActiveJobs } from '../components/jobs'
@@ -119,7 +119,7 @@ function ReplaceNotice({ song, verdict }: { song: Song; verdict?: LibraryVerdict
     ? ` It is ${Math.abs(loud).toFixed(1)} LU ${loud > 0 ? 'louder' : 'quieter'}.` : ''
   return (
     <div className={`callout ${verdict?.verdict === 'better' ? 'info' : 'warn'}`}>
-      <b>Already in the library:</b> {where}.{' '}
+      <b>{song.in_library_similar ? 'Looks like a song already in the library (similar name, check it):' : 'Already in the library:'}</b> {where}.{' '}
       {verdict ? `${outcome}${level} ` : 'The library copy could not be measured. '}
       Keeping the download does <b>not</b> replace it: both copies stay (the new one in 00 Inbox)
       {verdict?.verdict === 'better' ? ' until you send the old one to the Trash from the Library.' : '.'}
@@ -144,7 +144,7 @@ function SongCard({ song, median, player, onDecide, highlight }: {
         <Badge>{plural(song.versions.length, 'version')}</Badge>
         {pick?.vs_library
           ? <VerdictBadge v={pick.vs_library} />
-          : song.in_library.length > 0 && <Badge tone="warn" title={song.in_library.join('\n')}>Already in library</Badge>}
+          : song.in_library.length > 0 && <Badge tone="warn" title={song.in_library.join('\n')}>{song.in_library_similar ? 'Similar in library' : 'Already in library'}</Badge>}
         {song.wanted_by.length > 0 && (
           <Badge tone="info" title={song.wanted_by.map(w => `${w.artists.join(', ')} - ${w.title}`).join('\n')}>
             Wanted by {[...new Set(song.wanted_by.flatMap(w => w.playlists))].join(', ')}
@@ -202,6 +202,9 @@ export default function Downloads() {
   const batch = useBatch()
   const player = usePlayer()
   const { data, error, isLoading } = useQuery({ queryKey: ['downloads'], queryFn: () => api.get<Review | null>('/downloads') })
+  // Counted from the folders, without measuring: refreshed every few seconds and when you come back to the tab.
+  const pending = useQuery({ queryKey: ['pending'], queryFn: () => api.get<PendingDownloads>('/downloads/pending'),
+    refetchInterval: 8000, refetchOnWindowFocus: true })
   const decide = useMutation({
     mutationFn: ({ song, choice, keep }: { song: string; choice: string; keep?: string | null }) =>
       api.put(`/downloads/decisions/${song}`, { choice, keep_path: keep ?? null }),
@@ -246,6 +249,16 @@ export default function Downloads() {
         </button>
       </div>
       <ErrorNote error={error} />
+      {pending.data && (
+        <div className={`callout ${pending.data.new > 0 ? 'info' : 'ok'}`}>
+          {pending.data.files === 0
+            ? 'No audio files waiting in the download folders.'
+            : <><b>{plural(pending.data.files, 'file')}</b> waiting (about {plural(pending.data.songs, 'song')}).{' '}
+              {pending.data.new > 0
+                ? <>{pending.data.new} not reviewed yet: press <b>Review downloads now</b>.</>
+                : 'All of them are in the latest review.'}</>}
+        </div>
+      )}
       {data?.skipped_recent.length ? (
         <div className="callout info">{plural(data.skipped_recent.length, 'file')} changed in the last {data.settle_seconds} s were skipped (still downloading?).</div>
       ) : null}

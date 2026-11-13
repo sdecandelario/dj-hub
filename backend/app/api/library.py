@@ -78,8 +78,14 @@ def _mark_already_in_library(session, out, inbox_rows):
     for entry, row in zip(out, inbox_rows):
         hits = {o.path: (o, "file") for o in by_fp.get(row.quick_fp, [])} if row.quick_fp else {}
         if row.title:
-            for o in by_name.get(lib.match_key(row.artist, row.title), []):
+            key = lib.match_key(row.artist, row.title)
+            for o in by_name.get(key, []):
                 hits.setdefault(o.path, (o, "name"))
+            if not hits:   # nothing exact: spelling slips such as "Liason" / "Liaisons"
+                for other, copies in by_name.items():
+                    if lib.is_similar(key, other):
+                        for o in copies:
+                            hits.setdefault(o.path, (o, "similar"))
         entry["in_library"] = [
             {"rel_path": o.rel_path, "kind": o.kind, "folder": o.folder, "match": match,
              "integrated_lufs": (loudness.get(o.path) or {}).get("integrated_lufs")}

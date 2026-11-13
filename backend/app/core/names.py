@@ -3,6 +3,7 @@
 `normalize` is the key used for library and download songs. Spotify matching
 uses its own, looser rules in `matching.py`.
 """
+import difflib
 import re
 import unicodedata
 
@@ -25,6 +26,17 @@ def match_key(artist, title):
     """Key for 'is this the same song?': normalized artist and base title. Version labels such as
     '- 2005 Digital Remaster' or '(Radio Edit)' are dropped; remixes keep their name."""
     return normalize(artist), normalize(split_version(title or '')[0] or title)
+
+
+SIMILAR_RATIO = 0.85
+
+
+def is_similar(key, other):
+    """Two match keys that differ only by small spelling slips ('Liason Dangereuse' / 'Liaisons Dangereuses',
+    'en el Parque' / 'Del Parque'). Both artist and title must be close, so different songs by one artist stay apart."""
+    if not key[1] or not other[1] or key == other:
+        return False
+    return all(difflib.SequenceMatcher(None, a, b).ratio() >= SIMILAR_RATIO for a, b in zip(key, other))
 
 
 # A title tail or bracket that only says "remaster": no information for a DJ, so it is left out of Inbox names.

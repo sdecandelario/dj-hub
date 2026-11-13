@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from .audio import EXT, LOSSLESS
-from .names import COPY_SUFFIX, normalize, parse_download_filename, split_version, strip_remaster
+from .names import COPY_SUFFIX, is_similar, normalize, parse_download_filename, split_version, strip_remaster
 
 EDIT_GAP_SECONDS = 10         # versions further apart in length are a different edit
 TRANSCODE_GAP_DB = 85         # level difference full band vs > 19.5 kHz
@@ -279,6 +279,11 @@ def build_songs(items, library):
         names = {(i['artist'], i['title']) for i in members}
         in_library = [t for a, t_ in names for t in library.get((normalize(a), normalize(t_)), [])]
         in_library += library.get((normalize(artist), normalize(title)), [])
+        similar = False
+        if not in_library:   # no exact match: a library song with a slightly different spelling
+            key = (normalize(artist), normalize(title))
+            in_library = [t for other, tracks in library.items() if is_similar(key, other) for t in tracks]
+            similar = bool(in_library)
         for i in members:
             i['name_differs'] = (normalize(i['artist']), normalize(i['title'])) != (normalize(artist), normalize(title))
             i['listed_as'] = f"{i['artist']} - {i['title']}" if i['artist'] else i['title']
@@ -288,6 +293,7 @@ def build_songs(items, library):
             'song': f'{artist} - {title}' if artist else title,
             'suggested': suggested,
             'in_library': sorted({t['path'] for t in in_library}),
+            'in_library_similar': similar,
             'grouped_by_name': any(i['name_differs'] for i in members),
             'versions': members,
         })

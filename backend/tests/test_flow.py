@@ -207,3 +207,15 @@ def test_analysis_keeps_loud_section_and_tone_checks_and_remeasures_old_results(
     third = runner.run_sync("analyze", {"path": str(env.root)}, echo=None)
     with session_scope() as s:
         assert analysis.run_tracks(s, third)[0]["origin"] == "reused"
+
+
+def test_pending_downloads_are_counted_without_measuring(client, env):
+    real_audio(env.downloads / "Boy Harsher - Pain.mp3")
+    real_audio(env.downloads / "other" / "Boy Harsher - Pain.mp3", bitrate="96k")
+    real_audio(env.downloads / "Molchat Doma - Sudno.mp3", frequency=300)
+    before = client.get("/api/downloads/pending").json()
+    assert (before["files"], before["songs"], before["new"]) == (3, 2, 3)   # nothing reviewed yet
+    runner.run_sync("review_downloads", {}, echo=None)
+    real_audio(env.downloads / "Yazoo - Situation.mp3", frequency=500)
+    after = client.get("/api/downloads/pending").json()
+    assert (after["files"], after["songs"], after["new"]) == (4, 3, 1)

@@ -23,6 +23,12 @@ def review(session=Depends(get_session)):
     return downloads.review_view(session)
 
 
+@router.get("/downloads/pending")
+def pending(session=Depends(get_session)):
+    """Cheap count of what is waiting in the download folders (no measuring)."""
+    return downloads.pending(session)
+
+
 @router.post("/downloads/review")
 def start_review():
     return {"id": runner.submit("review_downloads")}

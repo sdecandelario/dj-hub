@@ -27,6 +27,22 @@ class Remasters(unittest.TestCase):
         self.assertEqual(strip_remaster('Song (Club Remix)'), 'Song (Club Remix)')
         self.assertEqual(strip_remaster('Remaster'), 'Remaster')
 
+    def test_spelling_slips_are_similar_but_different_songs_are_not(self):
+        from app.core.names import is_similar, match_key
+        self.assertTrue(is_similar(match_key('Liaisons Dangereuses', 'Los Niños Del Parque'),
+                                   match_key('Liason Dangereuse', 'Los Niños en el Parque')))
+        self.assertFalse(is_similar(match_key('Killing Joke', 'Wardance'), match_key('Killing Joke', 'Warfare')))
+        self.assertFalse(is_similar(match_key('The Cure', 'Lullaby'), match_key('The Cure', 'Lovesong')))
+        self.assertFalse(is_similar(match_key('DAF', 'Kebab'), match_key('DAF', 'Kebab')))   # exact matches are not "similar"
+
+    def test_download_with_a_slightly_different_library_spelling_is_flagged(self):
+        library = rd.library_index([{'kind': 'genre', 'artist': 'Liason Dangereuse', 'title': 'Los Niños en el Parque',
+                                     'path': 'Genres/EBM/x.mp3'}])
+        new = item('Liaisons Dangereuses - Los Niños Del Parque.mp3', artist='Liaisons Dangereuses', title='Los Niños Del Parque')
+        song = rd.build_songs([new], library)[0]
+        self.assertEqual(song['in_library'], ['Genres/EBM/x.mp3'])
+        self.assertTrue(song['in_library_similar'])
+
     def test_same_song_key_ignores_version_labels_but_not_remixes(self):
         from app.core.names import match_key
         self.assertEqual(match_key('Killing Joke', 'Wardance - 2005 Digital Remaster'), match_key('Killing Joke', 'Wardance'))

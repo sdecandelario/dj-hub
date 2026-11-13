@@ -348,8 +348,8 @@ export default function Library() {
                           onChange={e => setEdits({ ...edits, [f.rel_path]: { ...edits[f.rel_path], title: e.target.value } })} />
                         {f.genre_tag && <> <small className="muted">{f.genre_tag}</small></>}
                         {!!f.in_library?.length && <> <Badge tone="warn" title={f.in_library.map(c =>
-                          `${c.rel_path} (${c.match === 'file' ? 'same file' : 'same artist and title'}${c.integrated_lufs != null ? `, ${c.integrated_lufs.toFixed(1)} LUFS` : ''})`).join('\n')}>
-                          Already in {f.in_library[0].kind === 'genre' ? f.in_library[0].folder : `session ${f.in_library[0].folder}`}
+                          `${c.rel_path} (${c.match === 'file' ? 'same file' : c.match === 'similar' ? 'similar artist and title' : 'same artist and title'}${c.integrated_lufs != null ? `, ${c.integrated_lufs.toFixed(1)} LUFS` : ''})`).join('\n')}>
+                          {f.in_library.every(c => c.match === 'similar') ? 'Similar in' : 'Already in'} {f.in_library[0].kind === 'genre' ? f.in_library[0].folder : `session ${f.in_library[0].folder}`}
                           {f.in_library.length > 1 ? ` +${f.in_library.length - 1}` : ''}
                         </Badge></>}
                       </td>

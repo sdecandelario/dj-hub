@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .audio import quick_fingerprint
-from .names import guess_from_filename, match_key, normalize, song_folder_name, track_file_name
+from .names import guess_from_filename, is_similar, match_key, normalize, song_folder_name, track_file_name
 from .tags import read_tags, write_tags
 
 AUDIO = {".mp3", ".wav", ".aif", ".aiff", ".flac", ".m4a"}
@@ -342,8 +342,12 @@ def plan_apply(root, tracks, items, trash=None, when=None):
         if kind == "inbox" and to_kind == "genre" and not replacing:
             name_key = match_key(tags.get("artist") or songs[fp][0]["artist"], tags.get("title") or songs[fp][0]["title"])
             twins = [t["path"] for t in by_name.get(name_key, []) if t["fp"] != fp and t["path"] not in gone]
+            close = not twins
+            if close:
+                twins = [t["path"] for other, copies in by_name.items() if is_similar(name_key, other)
+                         for t in copies if t["fp"] != fp and t["path"] not in gone]
             if twins:
-                plan.notes.append(f"{source}: a song with this artist and title is already in the library "
+                plan.notes.append(f"{source}: a song with {'a similar' if close else 'this'} artist and title is already in the library "
                                   f"({', '.join(twins)}); this will be a second copy, nothing is replaced. "
                                   "To replace the old file instead, cancel and tick Replace on this song")
         if action == "move":
