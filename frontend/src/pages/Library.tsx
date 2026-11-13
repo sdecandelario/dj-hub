@@ -181,7 +181,8 @@ export default function Library() {
   const player = usePlayer()
   const [edits, setEdits] = useState<Record<string, { artist?: string; title?: string }>>({})
   const [genres, setGenres] = useState<Record<string, string>>({})
-  const [checked, setChecked] = useState<Set<string>>(new Set())
+  // Kept as file objects so the selection survives searches that no longer list those files.
+  const [checked, setChecked] = useState<Map<string, LibraryFile>>(new Map())
   const batch = useBatch()
   const tree = useQuery({ queryKey: ['tree'], queryFn: () => api.get<Tree>('/library/tree') })
   const files = useQuery({
@@ -189,6 +190,8 @@ export default function Library() {
     queryFn: () => api.get<LibraryFile[]>(`/library/files?${new URLSearchParams({
       ...(kind && { kind }), ...(folder && { folder }), ...(search && { q: search }) })}`),
   })
+  // An applied batch changes paths, so the selection would point at files that moved.
+  useEffect(() => { setChecked(new Map()) }, [batch.applied])
   // After a rename, move or undo, drop choices for paths no longer listed so they cannot come back later.
   useEffect(() => {
     if (!files.data || search) return
@@ -198,7 +201,7 @@ export default function Library() {
     setEdits(keep)
     setGenres(keep)
   }, [files.data, search])
-  const pick = (k: string, f: string) => { setGenres({}); setEdits({}); setChecked(new Set()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
+  const pick = (k: string, f: string) => { setGenres({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)
     if (id) next.set('file', String(id)); else next.delete('file')
@@ -225,15 +228,21 @@ export default function Library() {
   })
   // A saved rename gives the file a new path; choices made under the old path no longer count.
   const chosen = Object.entries(genres).filter(([rel, g]) => g && files.data?.some(x => x.rel_path === rel)).length
-  // Only files still listed count (after a move they leave this folder).
-  const checkedFiles = files.data?.filter(f => checked.has(f.rel_path)) ?? []
-  const allChecked = !!files.data?.length && checkedFiles.length === files.data.length
-  const toggle = (rel: string) => {
-    const next = new Set(checked)
-    if (next.has(rel)) next.delete(rel); else next.add(rel)
+  // The selection can include files hidden by the current search.
+  const checkedFiles = [...checked.values()]
+  const listedChecked = files.data?.filter(f => checked.has(f.rel_path)).length ?? 0
+  const allChecked = !!files.data?.length && listedChecked === files.data.length
+  const toggle = (f: LibraryFile) => {
+    const next = new Map(checked)
+    if (next.has(f.rel_path)) next.delete(f.rel_path); else next.set(f.rel_path, f)
     setChecked(next)
   }
-  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(files.data?.map(f => f.rel_path)))
+  // Select all / none applies to the files listed now and keeps the rest of the selection.
+  const toggleAll = () => {
+    const next = new Map(checked)
+    for (const f of files.data ?? []) { if (allChecked) next.delete(f.rel_path); else next.set(f.rel_path, f) }
+    setChecked(next)
+  }
   const title = kind ? (path || 'Library root') : 'Whole library'
 
   return (
@@ -284,7 +293,7 @@ export default function Library() {
             <p className="muted">Versions not chosen. Listen once more if in doubt, then send them to the Trash.</p>
           )}
           {tree.data && checkedFiles.length > 0 && (
-            <MoveBar tree={tree.data} files={checkedFiles} onClear={() => setChecked(new Set())} />
+            <MoveBar tree={tree.data} files={checkedFiles} onClear={() => setChecked(new Map())} />
           )}
           <div className="panel flush table-wrap">
             <table>
@@ -292,7 +301,7 @@ export default function Library() {
                 <tr>
                   <th className="check">
                     <input type="checkbox" checked={allChecked} onChange={toggleAll} title="Select all"
-                      ref={el => { if (el) el.indeterminate = checkedFiles.length > 0 && !allChecked }} />
+                      ref={el => { if (el) el.indeterminate = listedChecked > 0 && !allChecked }} />
                   </th>
                   <th></th><th>Artist</th><th>Title</th>{!kind && <th>Folder</th>}{kind === 'rejected' && <th>Song</th>}
                   <th className="num">LUFS</th><th className="num">dBTP</th>{kind === 'inbox' && <th>Genre</th>}
@@ -302,7 +311,7 @@ export default function Library() {
                 {files.data?.map(f => (
                   <tr key={f.id} className={`clickable${selected === f.id ? ' selected' : ''}`} onClick={() => select(f.id)}>
                     <td className="check" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={checked.has(f.rel_path)} onChange={() => toggle(f.rel_path)} />
+                      <input type="checkbox" checked={checked.has(f.rel_path)} onChange={() => toggle(f)} />
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <button className={`small${player.isPlaying(f.id) ? ' on' : ''}`} aria-label="Play"

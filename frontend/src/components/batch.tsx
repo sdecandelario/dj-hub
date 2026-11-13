@@ -5,8 +5,9 @@ import { basename, plural } from './ui'
 
 // Every file change goes through this dialog: preview -> Apply -> result (with Undo).
 
-type Ctx = { preview: (make: () => Promise<Batch>) => Promise<void> }
-const BatchContext = createContext<Ctx>({ preview: async () => {} })
+// `applied` counts applied batches, so pages can drop selections whose paths just changed.
+type Ctx = { preview: (make: () => Promise<Batch>) => Promise<void>; applied: number }
+const BatchContext = createContext<Ctx>({ preview: async () => {}, applied: 0 })
 export const useBatch = () => useContext(BatchContext)
 
 const relative = (root: string, path: string) => (path.startsWith(root + '/') ? path.slice(root.length + 1) : path)
@@ -32,6 +33,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const [batch, setBatch] = useState<Batch | null>(null)
   const [error, setError] = useState<string>('')
   const [busy, setBusy] = useState(false)
+  const [applied, setApplied] = useState(0)
   const [result, setResult] = useState<ApplyResult | null>(null)
   const client = useQueryClient()
 
@@ -62,6 +64,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     setError('')
     try {
       setResult(await api.post<ApplyResult>(`/batches/${batch.id}/apply`))
+      setApplied(n => n + 1)
       for (const key of ['files', 'tree', 'summary', 'downloads', 'batches', 'file', 'playlists', 'tracks']) {
         client.invalidateQueries({ queryKey: [key] })
       }
@@ -81,7 +84,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
   const skipped = batch ? batch.plan.steps.filter(s => s.action === 'skip') : []
 
   return (
-    <BatchContext.Provider value={{ preview }}>
+    <BatchContext.Provider value={{ preview, applied }}>
       {children}
       {(batch || (error && !busy)) && (
         <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
