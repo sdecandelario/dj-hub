@@ -48,6 +48,12 @@ def files(kind: str | None = None, folder: str | None = None, q: str | None = No
     if folder:
         query = query.where(File.folder == folder)
     rows = session.scalars(query.order_by(File.rel_path, File.path)).all()
+    if area == "library":
+        # A file removed outside the app (Finder, another tool) must not stay listed until the next scan.
+        gone = [r for r in rows if not Path(r.path).is_file()]
+        for r in gone:
+            r.present = False
+        rows = [r for r in rows if r.present]
     if q:
         words = lib.normalize(q).split()
         rows = [r for r in rows if all(w in lib.normalize(f"{r.artist} {r.title} {r.rel_path or r.path}")

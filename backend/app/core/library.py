@@ -238,6 +238,7 @@ def plan_apply(root, tracks, items, trash=None, when=None):
 
     items: [{"source": rel path, "to": "Genres/X" | "00 Inbox" | "Sessions/<name>", "action": "copy"|"move",
              optional "artist" and "title": rename an Inbox file while moving it,
+             optional "discard": true (Inbox move only): the file goes to 00 Rejected/<Artist - Title>,
              optional "replace": true (Inbox move only): the song's genre copies go to the Trash and the new
              file takes their place in that genre folder}]
     `source` is the song's path when the plan starts; later steps follow earlier moves.
@@ -254,8 +255,14 @@ def plan_apply(root, tracks, items, trash=None, when=None):
         if t["kind"] == "genre" and t["title"]:
             by_name.setdefault(match_key(t["artist"], t["title"]), []).append(t)
     plan = Plan("apply")
+    info = {t["path"]: t for t in tracks}
     for item in items:
         source, to, action = item.get("source", ""), item.get("to", ""), item.get("action", "copy")
+        if item.get("discard") and source in info:
+            # Discard: the file goes to 00 Rejected/<Artist - Title>, like a version not chosen in Downloads.
+            track = info[source]
+            to = f"{REJECTED}/{song_folder_name(f'{track['artist']} - {track['title']}' if track['artist'] else track['title'])}"
+            action = "move"
         try:
             to_kind, to_name = _check_target(to)
             to = str(Path(to))
@@ -287,6 +294,9 @@ def plan_apply(root, tracks, items, trash=None, when=None):
                             item.get("title") if item.get("title") is not None else own["title"])
             old = [t for t in tracks if t["kind"] == "genre" and t["path"] not in gone
                    and (t["fp"] == fp or (key[1] and match_key(t["artist"], t["title"]) == key))]
+            if not old and key[1]:   # no exact match: the same spelling slips the Inbox badge shows as "Similar"
+                old = [t for t in tracks if t["kind"] == "genre" and t["path"] not in gone and t["fp"] != fp
+                       and is_similar(key, match_key(t["artist"], t["title"]))]
             if not old:
                 plan.problems.append(f"{source}: no copy in a genre folder to replace")
                 continue

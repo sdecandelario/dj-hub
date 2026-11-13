@@ -301,3 +301,41 @@ def test_a_remaster_title_is_found_as_the_same_song_in_the_library(env):
     p = plan("apply", {"items": [{"source": "00 Inbox/Killing Joke - Wardance - 2005 Digital Remaster.mp3",
                                   "to": "Genres/Post-Punk & Dark Wave", "action": "move"}]})
     assert any("already in the library" in n for n in p.notes)
+
+
+def test_replace_works_for_a_similar_spelling_too(env):
+    from .conftest import real_audio
+
+    old = real_audio(env.root / "Genres" / "EBM & Industrial" / "09 Liason Dangereuse - Los Niños en el Parque.mp3",
+                     title="Los Niños en el Parque", artist="Liason Dangereuse", frequency=300)
+    real_audio(env.root / "00 Inbox" / "Liaisons Dangereuses - Los Niños Del Parque.mp3",
+               title="Los Niños Del Parque", artist="Liaisons Dangereuses", frequency=500)
+    p = plan("apply", {"items": [{"source": "00 Inbox/Liaisons Dangereuses - Los Niños Del Parque.mp3",
+                                  "to": "Genres/EBM & Industrial", "action": "move", "replace": True}]})
+    assert not p.problems and [s.label for s in p.runnable()] == ["trash", ""]
+    assert p.runnable()[0].source == str(old)
+
+
+def test_a_file_removed_outside_the_app_is_not_listed_any_more(env):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    gone = fake_audio(env.root / "00 Inbox" / "A - B.mp3")
+    with session_scope() as s:
+        library.sync_library(s)
+    client = TestClient(app)
+    assert len(client.get("/api/library/files", params={"kind": "inbox"}).json()) == 1
+    gone.unlink()
+    assert client.get("/api/library/files", params={"kind": "inbox"}).json() == []
+
+
+def test_discard_moves_an_inbox_file_to_rejected_and_undo_brings_it_back(env):
+    song = fake_audio(env.root / "00 Inbox" / "DAF - Kebab.mp3")
+    item = {"source": "00 Inbox/DAF - Kebab.mp3", "to": "", "action": "move", "discard": True}
+    batch = preview("apply", {"items": [item]})
+    assert library.apply(session_scope, batch)["status"] == "applied"
+    kept = env.root / "00 Rejected" / "DAF - Kebab" / "DAF - Kebab.mp3"
+    assert kept.exists() and not song.exists()
+    library.apply(session_scope, preview("undo", {"batch_id": batch}))
+    assert song.exists() and not kept.exists()

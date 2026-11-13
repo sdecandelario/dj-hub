@@ -183,6 +183,8 @@ export default function Library() {
   const [genres, setGenres] = useState<Record<string, string>>({})
   // Inbox files that replace the copy already in a genre folder (the old copy goes to the Trash).
   const [replacing, setReplacing] = useState<Record<string, boolean>>({})
+  // Inbox files not wanted (the library copy is better): they go to 00 Rejected.
+  const [discarding, setDiscarding] = useState<Record<string, boolean>>({})
   // Kept as file objects so the selection survives searches that no longer list those files.
   const [checked, setChecked] = useState<Map<string, LibraryFile>>(new Map())
   const batch = useBatch()
@@ -203,8 +205,9 @@ export default function Library() {
     setEdits(keep)
     setGenres(keep)
     setReplacing(keep)
+    setDiscarding(keep)
   }, [files.data, search])
-  const pick = (k: string, f: string) => { setGenres({}); setReplacing({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
+  const pick = (k: string, f: string) => { setGenres({}); setReplacing({}); setDiscarding({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)
     if (id) next.set('file', String(id)); else next.delete('file')
@@ -217,7 +220,8 @@ export default function Library() {
   for (const f of files.data ?? []) {
     const rep = replacing[f.rel_path] ? genreCopy(f) : undefined
     const g = rep ? rep.folder : genres[f.rel_path]
-    if (g) moves[f.rel_path] = g
+    if (discarding[f.rel_path]) moves[f.rel_path] = ''
+    else if (g) moves[f.rel_path] = g
   }
   const sortInbox = () => batch.preview(() => api.post<Batch>('/batches/preview', {
     kind: 'apply',
@@ -225,8 +229,9 @@ export default function Library() {
       // Unsaved name edits travel with the move, so they are not lost.
       const f = files.data?.find(x => x.rel_path === rel), e = edits[rel]
       const edited = f && e && ((e.artist ?? f.artist ?? '') !== (f.artist ?? '') || (e.title ?? f.title ?? '') !== (f.title ?? ''))
-      return { source: rel, to: `${GENRES}/${g}`, action: 'move', ...(replacing[rel] && { replace: true }),
-        ...(edited && { artist: e.artist ?? f.artist ?? '', title: e.title ?? f.title ?? '' }) }
+      return { source: rel, to: g ? `${GENRES}/${g}` : '', action: 'move',
+        ...(discarding[rel] && { discard: true }), ...(replacing[rel] && !discarding[rel] && { replace: true }),
+        ...(edited && !discarding[rel] && { artist: e.artist ?? f.artist ?? '', title: e.title ?? f.title ?? '' }) }
     }) },
   }))
   const fixTags = (genre: boolean) => batch.preview(() => api.post<Batch>('/batches/preview', { kind: 'tags', payload: { genre } }))
@@ -239,6 +244,7 @@ export default function Library() {
   })
   // A saved rename gives the file a new path; choices made under the old path no longer count.
   const chosen = Object.keys(moves).length
+  const discards = Object.keys(moves).filter(rel => discarding[rel]).length
   // The selection can include files hidden by the current search.
   const checkedFiles = [...checked.values()]
   const listedChecked = files.data?.filter(f => checked.has(f.rel_path)).length ?? 0
@@ -300,7 +306,7 @@ export default function Library() {
             {kind === 'inbox' && (
               <>
                 <button className="small" disabled={!renames.length} onClick={saveNames}>Save {renames.length || ''} name change{renames.length === 1 ? '' : 's'}</button>
-                <button className="small primary" disabled={!chosen} onClick={sortInbox}>Move {chosen || ''} to genres</button>
+                <button className="small primary" disabled={!chosen} onClick={sortInbox}>{discards ? `Apply ${chosen}` : `Move ${chosen || ''} to genres`}</button>
               </>
             )}
           </div>
@@ -363,13 +369,19 @@ export default function Library() {
                     <td className="num">{num(f.loudness?.true_peak_dbtp)}</td>
                     {kind === 'inbox' && (
                       <td onClick={e => e.stopPropagation()}>
-                        {genreCopy(f) && (
+                        <label title="Not wanted (for example the library copy is better): move it to 00 Rejected">
+                          <input type="checkbox" checked={!!discarding[f.rel_path]}
+                            onChange={e => setDiscarding({ ...discarding, [f.rel_path]: e.target.checked })} /> Discard{' '}
+                        </label>
+                        {!discarding[f.rel_path] && genreCopy(f) && (
                           <label title={`Send ${genreCopy(f)!.rel_path} to the Trash and put this file in its place (undo restores it)`}>
                             <input type="checkbox" checked={!!replacing[f.rel_path]}
                               onChange={e => setReplacing({ ...replacing, [f.rel_path]: e.target.checked })} /> Replace{' '}
                           </label>
                         )}
-                        {replacing[f.rel_path] && genreCopy(f)
+                        {discarding[f.rel_path]
+                          ? <small>to 00 Rejected</small>
+                          : replacing[f.rel_path] && genreCopy(f)
                           ? <small>in {genreCopy(f)!.folder}</small>
                           : <select value={genres[f.rel_path] ?? ''} onChange={e => setGenres({ ...genres, [f.rel_path]: e.target.value })}>
                               <option value="">—</option>
