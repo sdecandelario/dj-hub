@@ -5,7 +5,7 @@ One local app for the DJ library in `~/Documents/DJ Tracks`. It replaces `DJ_Pla
 - **Playlists**: which tracks of your Spotify playlists are missing, need a check (other version, similar title), or are already in the library. Each track shows its DJ project, and whether a matching download is waiting.
 - **Downloads**: measures new files in the Nicotine and `~/Downloads` folders, groups the versions of each song, flags transcodes, decode errors, other edits and compilations, and suggests the best one. You listen, pick, and move: the kept version goes to `00 Inbox`, the others to `00 Rejected/<song>`.
 - **Library**: browse Inbox, Rejected, genres and sessions; select a song to play it, see its copies, playlists and loudness history; set its genre, add it to a session, send it to the Trash. Sort the whole Inbox in one go.
-- **Analysis**: loudness runs (LUFS, true peak, LRA) on any file or folder, compared with a reference run. Every run is kept.
+- **Analysis**: loudness runs (LUFS, true peak, LRA), compared with a reference run. Start a run from the Library (selected songs, a folder or the whole library); the Analysis page shows the runs and results. Every run is kept.
 - **History**: every job and every file change. Applied changes can be undone.
 
 It runs natively on the Mac (no Docker): it needs direct access to the music folders, the Trash and Finder.

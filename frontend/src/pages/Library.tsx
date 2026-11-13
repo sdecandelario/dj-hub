@@ -5,7 +5,7 @@ import { api, audioUrl, type Batch, type FileDetail, type LibraryFile, type Tree
 import { useBatch } from '../components/batch'
 import { HistoryChart } from '../components/charts'
 import { PlayerBar, usePlayer } from '../components/player'
-import { startJob } from '../components/jobs'
+import { isRunning, startJob, useActiveJobs } from '../components/jobs'
 import { Badge, Empty, ErrorNote, num, plural, StatusBadge, when } from '../components/ui'
 
 const GENRES = 'Genres', SESSIONS = 'Sessions', INBOX = '00 Inbox'
@@ -15,6 +15,7 @@ const defaultAction = (to: string) => (to.startsWith(`${SESSIONS}/`) ? 'copy' : 
 
 function MoveBar({ tree, files, onClear }: { tree: Tree; files: LibraryFile[]; onClear: () => void }) {
   const batch = useBatch()
+  const jobs = useActiveJobs()
   const [to, setTo] = useState('')
   const [newSession, setNewSession] = useState('')
   const [action, setAction] = useState<'move' | 'copy'>('move')

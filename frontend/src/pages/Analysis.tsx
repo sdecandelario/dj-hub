@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, type AnalysisOverview, type Measurement, type Tree } from '../api'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { api, type AnalysisOverview, type Measurement } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
 import { Badge, Card, ErrorNote, num, StatusBadge, when } from '../components/ui'
 
 const valid = (r: Measurement) => r.status === 'OK' &&
@@ -37,87 +37,13 @@ function annotate(row: Measurement, ref: number | null): Row {
 
 const REF_KEY = 'dj-hub:analysis-reference'
 
-type Target = { label: string; path: string }
-type Group = { title: string; items: Target[] }
-
-/** A dropdown of checkboxes for picking several folders. Choosing the whole library covers everything else. */
-function FolderPicker({ groups, whole, selected, onChange }: {
-  groups: Group[]; whole: Target; selected: string[]; onChange: (paths: string[]) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const box = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', close)
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close) }
-  }, [open])
-  const all = selected.includes(whole.path)
-  const set = new Set(selected)
-  const toggle = (paths: string[], on: boolean) => {
-    const next = new Set(set)
-    for (const p of paths) on ? next.add(p) : next.delete(p)
-    onChange([...next])
-  }
-  const labels = groups.flatMap(g => g.items).filter(t => set.has(t.path)).map(t => t.label)
-  const summary = all ? whole.label : !labels.length ? 'Choose what to analyze'
-    : labels.length <= 2 ? labels.join(', ') : `${labels.length} folders`
-  return (
-    <div className="picker" ref={box}>
-      <button type="button" className="picker-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{summary}</span><span aria-hidden>▾</span>
-      </button>
-      {open && (
-        <div className="picker-menu">
-          <label className="picker-item strong">
-            <input type="checkbox" checked={all} onChange={e => onChange(e.target.checked ? [whole.path] : [])} />
-            {whole.label}
-          </label>
-          {groups.map(g => {
-            const paths = g.items.map(t => t.path)
-            const every = paths.length > 0 && paths.every(p => set.has(p))
-            return (
-              <div key={g.title} className="picker-group">
-                <div className="picker-head">
-                  <span>{g.title}</span>
-                  {paths.length > 1 && (
-                    <button type="button" className="small ghost" disabled={all} onClick={() => toggle(paths, !every)}>
-                      {every ? 'Clear' : 'All'}
-                    </button>
-                  )}
-                </div>
-                {g.items.map(t => (
-                  <label key={t.path} className="picker-item">
-                    <input type="checkbox" disabled={all} checked={all || set.has(t.path)}
-                      onChange={e => toggle([t.path], e.target.checked)} />
-                    {t.label}
-                  </label>
-                ))}
-              </div>
-            )
-          })}
-          {selected.length > 0 && (
-            <div className="picker-foot"><button type="button" className="small ghost" onClick={() => onChange([])}>Clear selection</button></div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function Analysis() {
-  const jobs = useActiveJobs()
   const { data, error } = useQuery({ queryKey: ['analysis'], queryFn: () => api.get<AnalysisOverview>('/analysis') })
-  const tree = useQuery({ queryKey: ['tree'], queryFn: () => api.get<Tree>('/library/tree') })
   const [view, setView] = useState<number | 'current'>('current')
   const [refId, setRefId] = useState<string>(() => { try { return localStorage.getItem(REF_KEY) ?? '' } catch { return '' } })
   const [filter, setFilter] = useState<'all' | 'priority' | 'level' | 'dynamic' | 'missing'>('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<{ key: keyof Row; dir: 1 | -1 }>({ key: 'integrated_lufs', dir: 1 })
-  const [targets, setTargets] = useState<string[]>([])
   const runTracks = useQuery({
     queryKey: ['analysis', 'run', view],
     queryFn: () => api.get<Measurement[]>(`/analysis/runs/${view}`),
@@ -145,35 +71,23 @@ export default function Analysis() {
       {label}{sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}
     </th>
   )
-  const root = tree.data?.root ?? ''
-  const whole: Target = { label: 'Whole library', path: root }
-  const groups: Group[] = [
-    { title: 'Library', items: [{ label: '00 Inbox', path: `${root}/00 Inbox` }] },
-    { title: 'Genres', items: (tree.data?.genres ?? []).map(g => ({ label: g, path: `${root}/Genres/${g}` })) },
-    { title: 'Sessions', items: (tree.data?.sessions ?? []).map(x => ({ label: x, path: `${root}/Sessions/${x}` })) },
-  ].filter(g => g.items.length)
-
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Loudness analysis</h1>
-          <p className="muted">LUFS, true peak and loudness range for each file. Every run is kept as history. Audio files are only read.</p>
-        </div>
-        <div className="row">
-          <FolderPicker groups={groups} whole={whole} selected={targets} onChange={setTargets} />
-          <button className="primary" disabled={!root || !targets.length || isRunning(jobs, 'analyze')}
-            onClick={() => startJob('analyze', { paths: targets.includes(root) ? [root] : targets })}>
-            Analyze
-          </button>
+          <p className="muted">LUFS, true peak and loudness range for each file. Every run is kept as history. Audio files are only read. Start an analysis from the <Link to="/library">Library</Link>.</p>
         </div>
       </div>
       <ErrorNote error={error} />
+      {data && !data.runs.length && (
+        <div className="panel"><p className="muted">No runs yet. Select songs or a folder in the <Link to="/library">Library</Link> and click Analyze.</p></div>
+      )}
       <div className="row" style={{ marginBottom: 12 }}>
         <label className="field">View
           <select value={String(view)} onChange={e => setView(e.target.value === 'current' ? 'current' : Number(e.target.value))}>
             <option value="current">Current library (latest per file)</option>
-            {data?.runs.map(r => <option key={r.id} value={r.id}>{r.label} · {r.files} files · {r.config.input}</option>)}
+            {data?.runs.map(r => <option key={r.id} value={r.id}>{r.label} · {r.scope} · {r.files} files · {r.config.input}</option>)}
           </select>
         </label>
         <label className="field">Library reference

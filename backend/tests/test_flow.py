@@ -129,6 +129,24 @@ def test_analysis_of_several_folders_is_one_run(env):
         assert len(analysis.run_tracks(s, job)) == 3
 
 
+def test_analysis_of_selected_songs_is_not_a_reference(env):
+    one = real_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Liebe.mp3")
+    two = real_audio(env.root / "Genres" / "EBM & Industrial" / "Nitzer Ebb - Join.mp3", frequency=300)
+    real_audio(env.root / "Genres" / "EBM & Industrial" / "Skip - Me.mp3", frequency=500)
+    single = runner.run_sync("analyze", {"paths": [str(one)]}, echo=None)
+    job = runner.run_sync("analyze", {"paths": [str(one), str(two)]}, echo=None)
+    with session_scope() as s:
+        runs = {r["id"]: r for r in analysis.runs(s)}
+        assert runs[single]["scope"] == "file"
+        assert runs[job]["scope"] == "selection" and runs[job]["complete"]
+        assert sorted(r["filename"] for r in analysis.run_tracks(s, job)) == sorted([one.name, two.name])
+        assert analysis.overview(s)["references"] == []
+        assert analysis.library_median(s) == (None, None)
+    folder = runner.run_sync("analyze", {"paths": [str(one.parent)]}, echo=None)
+    with session_scope() as s:
+        assert [r["id"] for r in analysis.overview(s)["references"]] == [folder]
+
+
 def test_missing_files_are_flagged_under_any_input_folder(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     gone = a / "gone.mp3"

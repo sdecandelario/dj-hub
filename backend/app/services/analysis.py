@@ -90,7 +90,12 @@ def run_analysis(ctx):
         raise ValueError("Nothing to analyze")
     paths = collect_paths(sources)
     versions = audio.tool_versions()
-    scope = "file" if len(sources) == 1 and sources[0].is_file() else "folder"
+    if all(s.is_dir() for s in sources):
+        scope = "folder"  # whole folders: can serve as a reference
+    elif len(sources) == 1:
+        scope = "file"
+    else:
+        scope = "selection"  # hand-picked songs: never a reference
     inputs = [str(s) for s in sources]
     summary = {"scope": scope, "input": "; ".join(inputs), "manifest": [str(p) for p in paths],
                "config": {"input": "; ".join(inputs), "inputs": inputs, **versions,
