@@ -216,3 +216,29 @@ def test_rename_inbox_file_changes_name_and_tags_then_undo(env):
 
     p = plan("rename", {"items": [{"source": "Genres/X/a.mp3", "artist": "A", "title": "B"}]})
     assert "only files in 00 Inbox" in p.problems[0]
+
+
+def test_move_from_inbox_applies_name_edits(env):
+    from app.core.tags import read_tags
+
+    from .conftest import real_audio
+
+    real_audio(env.root / "00 Inbox" / "VVV - Invierno nuclear.mp3", title="Invierno nuclear", artist="VVV")
+    item = {"source": "00 Inbox/VVV - Invierno nuclear.mp3", "to": "Genres/Post-Punk & Dark Wave",
+            "action": "move", "artist": "VVV [Trippin'you]", "title": "Invierno nuclear"}
+    batch = preview("apply", {"items": [item]})
+    library.apply(session_scope, batch)
+    new = env.root / "Genres" / "Post-Punk & Dark Wave" / "VVV [Trippin'you] - Invierno nuclear.mp3"
+    assert new.exists() and read_tags(new)["artist"] == "VVV [Trippin'you]"
+    library.apply(session_scope, preview("undo", {"batch_id": batch}))
+    old = env.root / "00 Inbox" / "VVV - Invierno nuclear.mp3"
+    assert old.exists() and read_tags(old)["artist"] == "VVV"
+
+
+def test_move_from_inbox_rejects_empty_title(env):
+    from .conftest import real_audio
+
+    real_audio(env.root / "00 Inbox" / "A - B.mp3", title="B", artist="A")
+    item = {"source": "00 Inbox/A - B.mp3", "to": "Genres/X", "action": "move", "artist": "A2", "title": " "}
+    p = plan("apply", {"items": [item]})
+    assert "title cannot be empty" in p.problems[0]

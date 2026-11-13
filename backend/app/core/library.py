@@ -236,7 +236,8 @@ def _inside_root(root, rel):
 def plan_apply(root, tracks, items):
     """Copies and moves inside the library.
 
-    items: [{"source": rel path, "to": "Genres/X" | "00 Inbox" | "Sessions/<name>", "action": "copy"|"move"}]
+    items: [{"source": rel path, "to": "Genres/X" | "00 Inbox" | "Sessions/<name>", "action": "copy"|"move",
+             optional "artist" and "title": rename an Inbox file while moving it}]
     `source` is the song's path when the plan starts; later steps follow earlier moves.
     """
     root = Path(root)
@@ -286,9 +287,18 @@ def plan_apply(root, tracks, items):
                                      "a song keeps one genre (move it from its genre folder to change genre)")
                 continue
             genres[fp] = after
-        dest = str(Path(to) / Path(source).name)
+        tags, file_name = {}, Path(source).name
+        if ("title" in item or "artist" in item) and kind == "inbox" and action == "move":
+            # Edited in the Inbox: the file gets the new name and tags as it moves.
+            artist, title = (item.get("artist") or "").strip(), (item.get("title") or "").strip()
+            if not title:
+                plan.problems.append(f"{source}: the title cannot be empty")
+                continue
+            file_name = track_file_name(artist, title, Path(source).suffix) or file_name
+            tags = {"artist": artist or None, "title": title}
+        dest = str(Path(to) / file_name)
         if ((root / dest).exists() and dest not in gone) or dest in planned.values():
-            plan.problems.append(f"{source}: a different file named {Path(source).name!r} already exists in {to}")
+            plan.problems.append(f"{source}: a different file named {Path(dest).name!r} already exists in {to}")
             continue
         planned[(to, fp)] = dest
         if action == "move":
@@ -296,7 +306,7 @@ def plan_apply(root, tracks, items):
             gone.add(current)
         if kind == "genre" and action == "move":
             plan.notes.append(f"{source}: if Rekordbox already imported it, re-link it after the move")
-        plan.steps.append(Step(action, str(root / current), str(root / dest)))
+        plan.steps.append(Step(action, str(root / current), str(root / dest), tags=tags))
     return plan
 
 

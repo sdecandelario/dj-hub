@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, audioUrl, type Batch, type FileDetail, type LibraryFile, type Tree } from '../api'
 import { useBatch } from '../components/batch'
@@ -27,6 +27,10 @@ function MoveBar({ tree, files, onClear }: { tree: Tree; files: LibraryFile[]; o
   return (
     <div className="panel row" style={{ marginBottom: 10, padding: '8px 12px' }}>
       <b>{plural(files.length, 'song')} selected</b>
+      <button className="small" disabled={isRunning(jobs, 'analyze')}
+        onClick={() => startJob('analyze', { paths: files.map(f => f.path) })}>
+        Analyze {files.length}
+      </button>
       <span className="spacer" />
       <select value={action} onChange={e => setAction(e.target.value as 'move' | 'copy')}>
         <option value="move">Move</option>
@@ -185,6 +189,15 @@ export default function Library() {
     queryFn: () => api.get<LibraryFile[]>(`/library/files?${new URLSearchParams({
       ...(kind && { kind }), ...(folder && { folder }), ...(search && { q: search }) })}`),
   })
+  // After a rename, move or undo, drop choices for paths no longer listed so they cannot come back later.
+  useEffect(() => {
+    if (!files.data || search) return
+    const listed = new Set(files.data.map(f => f.rel_path))
+    const keep = <T,>(o: Record<string, T>) => (Object.keys(o).every(k => listed.has(k)) ? o
+      : Object.fromEntries(Object.entries(o).filter(([k]) => listed.has(k))))
+    setEdits(keep)
+    setGenres(keep)
+  }, [files.data, search])
   const pick = (k: string, f: string) => { setGenres({}); setEdits({}); setChecked(new Set()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)
@@ -194,18 +207,24 @@ export default function Library() {
   const path = folderPath(kind, folder)
   const sortInbox = () => batch.preview(() => api.post<Batch>('/batches/preview', {
     kind: 'apply',
-    payload: { items: Object.entries(genres).filter(([, g]) => g).map(([rel, g]) => ({ source: rel, to: `${GENRES}/${g}`, action: 'move' })) },
+    payload: { items: Object.entries(genres).filter(([rel, g]) => g && files.data?.some(x => x.rel_path === rel)).map(([rel, g]) => {
+      // Unsaved name edits travel with the move, so they are not lost.
+      const f = files.data?.find(x => x.rel_path === rel), e = edits[rel]
+      const edited = f && e && ((e.artist ?? f.artist ?? '') !== (f.artist ?? '') || (e.title ?? f.title ?? '') !== (f.title ?? ''))
+      return { source: rel, to: `${GENRES}/${g}`, action: 'move',
+        ...(edited && { artist: e.artist ?? f.artist ?? '', title: e.title ?? f.title ?? '' }) }
+    }) },
   }))
   const fixTags = (genre: boolean) => batch.preview(() => api.post<Batch>('/batches/preview', { kind: 'tags', payload: { genre } }))
   const renames = (files.data ?? []).filter(f => edits[f.rel_path] && (
     (edits[f.rel_path].artist ?? f.artist ?? '') !== (f.artist ?? '') || (edits[f.rel_path].title ?? f.title ?? '') !== (f.title ?? '')))
   const saveNames = () => batch.preview(async () => {
-    const b = await api.post<Batch>('/batches/preview', { kind: 'rename', payload: {
+    // Edits stay until the files are renamed, so cancelling the preview loses nothing.
+    return api.post<Batch>('/batches/preview', { kind: 'rename', payload: {
       items: renames.map(f => ({ source: f.rel_path, artist: edits[f.rel_path].artist ?? f.artist ?? '', title: edits[f.rel_path].title ?? f.title ?? '' })) } })
-    setEdits({})
-    return b
   })
-  const chosen = Object.values(genres).filter(Boolean).length
+  // A saved rename gives the file a new path; choices made under the old path no longer count.
+  const chosen = Object.entries(genres).filter(([rel, g]) => g && files.data?.some(x => x.rel_path === rel)).length
   // Only files still listed count (after a move they leave this folder).
   const checkedFiles = files.data?.filter(f => checked.has(f.rel_path)) ?? []
   const allChecked = !!files.data?.length && checkedFiles.length === files.data.length

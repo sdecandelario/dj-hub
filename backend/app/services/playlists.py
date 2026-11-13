@@ -29,6 +29,7 @@ def run_refresh(ctx):
     with session_scope() as s:
         ids = ctx.params.get("ids") or [p.id for p in s.scalars(
             select(Playlist).where(Playlist.tracked.is_(True)).order_by(Playlist.position)).all()]
+        names = {p.id: p.name for p in s.scalars(select(Playlist)).all() if p.name}
     if not ids:
         raise ValueError("No playlists configured. Add one in Settings.")
     try:
@@ -40,7 +41,7 @@ def run_refresh(ctx):
     failed = []
     for i, playlist_id in enumerate(ids, 1):
         ctx.check()
-        ctx.progress(i - 1, len(ids), f"Reading {playlist_id}")
+        ctx.progress(i - 1, len(ids), f"Reading {names.get(playlist_id, playlist_id)}")
         try:
             data = spotify.fetch_playlist(playlist_id, token)
         except (urllib.error.URLError, RuntimeError, KeyError, ValueError) as error:
