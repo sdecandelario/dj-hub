@@ -3,37 +3,13 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AnalysisOverview, type Measurement } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
-import { Badge, Card, ErrorNote, num, StatusBadge, when } from '../components/ui'
+import { Badge, Card, ErrorNote, num, signed, StatusBadge, when } from '../components/ui'
+import { contextFor, isValid, judge, median, order, type Level, type Verdict } from '../verdict'
 
-const valid = (r: Measurement) => r.status === 'OK' &&
-  [r.integrated_lufs, r.true_peak_dbtp, r.loudness_range_lu].every(v => typeof v === 'number')
+type Row = Measurement & { delta: number | null; verdict: Verdict }
 
-const median = (rows: Measurement[]) => {
-  const a = rows.filter(valid).map(r => r.integrated_lufs as number).sort((x, y) => x - y)
-  return a.length ? (a[Math.floor((a.length - 1) / 2)] + a[Math.floor(a.length / 2)]) / 2 : null
-}
-
-type Row = Measurement & { delta: number | null; priority: boolean; level: boolean; dynamic: boolean; notes: string }
-
-// Same interpretation as the old loudness dashboard: comparisons, not correction instructions.
-function annotate(row: Measurement, ref: number | null): Row {
-  const ok = valid(row)
-  const peak = row.true_peak_dbtp ?? 0
-  const delta = ok && ref !== null ? (row.integrated_lufs as number) - ref : null
-  const r = { ...row, delta, priority: row.status !== 'OK' || !!row.error || (ok && peak > 2),
-    level: delta !== null && Math.abs(delta) > 3, dynamic: ok && (row.loudness_range_lu as number) > 10, notes: '' }
-  const notes: string[] = []
-  if (row.missing) notes.push('Missing at the latest check: historical measurement.')
-  if (row.status !== 'OK') notes.push('Invalid measurement: check the file and analyze again.')
-  if (row.error) notes.push('Decoding warning: inspect the details and listen.')
-  if (ok && peak > 2) notes.push('High peak: verify with another meter and listen; if defects are audible, compare a trusted source.')
-  else if (ok && peak > 0) notes.push('Positive peak: check playback headroom; this does not confirm distortion.')
-  if (r.level) notes.push(`Loudness difference ${Math.abs(delta as number) > 6 ? 'very large' : 'noticeable'}: compare mixing passages; consider another master if a large trim is needed.`)
-  if (r.dynamic) notes.push('Wide dynamics: listen to intros and outros.')
-  if (!notes.length) notes.push('No notable flags. Audio quality has not been verified.')
-  r.notes = notes.join(' ')
-  return r
-}
+const TONE = { fix: 'danger', check: 'warn', ok: 'ok' } as const
+const LABEL = { fix: 'Fix', check: 'Check', ok: 'OK' } as const
 
 const REF_KEY = 'dj-hub:analysis-reference'
 
@@ -41,9 +17,9 @@ export default function Analysis() {
   const { data, error } = useQuery({ queryKey: ['analysis'], queryFn: () => api.get<AnalysisOverview>('/analysis') })
   const [view, setView] = useState<number | 'current'>('current')
   const [refId, setRefId] = useState<string>(() => { try { return localStorage.getItem(REF_KEY) ?? '' } catch { return '' } })
-  const [filter, setFilter] = useState<'all' | 'priority' | 'level' | 'dynamic' | 'missing'>('all')
+  const [filter, setFilter] = useState<'all' | Level | 'missing'>('all')
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<{ key: keyof Row; dir: 1 | -1 }>({ key: 'integrated_lufs', dir: 1 })
+  const [sort, setSort] = useState<{ key: keyof Row | 'verdict'; dir: 1 | -1 }>({ key: 'verdict', dir: -1 })
   const runTracks = useQuery({
     queryKey: ['analysis', 'run', view],
     queryFn: () => api.get<Measurement[]>(`/analysis/runs/${view}`),
@@ -54,20 +30,36 @@ export default function Analysis() {
   const reference = references.find(r => String(r.id) === refId) ?? references[0]
   const ref = reference?.median_lufs ?? null
   const source = view === 'current' ? data?.current ?? [] : (runTracks.data ?? []).map(r => ({ ...r, run_id: view }))
-  const rows = useMemo(() => source.map(r => annotate(r, ref)), [source, ref])
+  const rows: Row[] = useMemo(() => {
+    const ctx = contextFor(source.filter(r => !r.missing), ref)
+    return source.map(r => ({ ...r, delta: isValid(r) && ref !== null ? (r.integrated_lufs as number) - ref : null, verdict: judge(r, ctx) }))
+  }, [source, ref])
   const active = rows.filter(r => !r.missing)
+  const count = (level: Level) => active.filter(r => r.verdict.level === level).length
   const q = search.toLowerCase()
+  const sortValue = (r: Row) => sort.key === 'verdict' ? order(r.verdict) * 100 + Math.abs(r.delta ?? 0) : r[sort.key]
   const shown = rows
     .filter(r => `${r.filename} ${r.path}`.toLowerCase().includes(q))
-    .filter(r => filter === 'all' ? !r.missing : filter === 'missing' ? r.missing : !r.missing && r[filter])
+    .filter(r => filter === 'all' ? !r.missing : filter === 'missing' ? r.missing : !r.missing && r.verdict.level === filter)
     .sort((a, b) => {
-      const x = a[sort.key], y = b[sort.key]
+      const x = sortValue(a), y = sortValue(b)
       return sort.dir * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? '')))
     })
-  const points = shown.filter(r => valid(r) && !r.missing).map(r => ({
-    lufs: r.integrated_lufs as number, peak: r.true_peak_dbtp as number, label: r.filename, flag: r.priority }))
-  const header = (key: keyof Row, label: string, numeric = true) => (
-    <th className={`sortable${numeric ? ' num' : ''}`} onClick={() => setSort({ key, dir: sort.key === key ? (-sort.dir as 1 | -1) : 1 })}>
+  const points = shown.filter(r => isValid(r) && !r.missing).map(r => ({
+    lufs: r.integrated_lufs as number, peak: r.true_peak_dbtp as number, label: r.filename, flag: r.verdict.level !== 'ok' }))
+  const folders = useMemo(() => {
+    const groups = new Map<string, { fix: number; check: number; ok: number }>()
+    for (const r of active) {
+      const dir = r.path.slice(0, r.path.lastIndexOf('/'))
+      const g = groups.get(dir) ?? { fix: 0, check: 0, ok: 0 }
+      g[r.verdict.level]++
+      groups.set(dir, g)
+    }
+    return [...groups].map(([dir, g]) => ({ dir, ...g, total: g.fix + g.check + g.ok }))
+      .filter(g => g.fix + g.check > 0).sort((a, b) => (b.fix * 2 + b.check) / b.total - (a.fix * 2 + a.check) / a.total).slice(0, 8)
+  }, [active])
+  const header = (key: keyof Row | 'verdict', label: string, numeric = true) => (
+    <th className={`sortable${numeric ? ' num' : ''}`} onClick={() => setSort({ key, dir: sort.key === key ? (-sort.dir as 1 | -1) : key === 'verdict' ? -1 : 1 })}>
       {label}{sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}
     </th>
   )
@@ -102,15 +94,32 @@ export default function Analysis() {
       </div>
       <div className="cards">
         <Card label="Files present" value={active.length} selected={filter === 'all'} onClick={() => setFilter('all')} />
-        <Card label="Verify first" value={active.filter(r => r.priority).length} hint="Errors or high peaks"
-          selected={filter === 'priority'} onClick={() => setFilter('priority')} />
-        <Card label="Loudness difference" value={active.filter(r => r.level).length} hint="More than 3 LU from the reference"
-          selected={filter === 'level'} onClick={() => setFilter('level')} />
-        <Card label="Wide dynamics" value={active.filter(r => r.dynamic).length} selected={filter === 'dynamic'} onClick={() => setFilter('dynamic')} />
+        <Card label="Fix" value={count('fix')} hint="Replace or find another version"
+          selected={filter === 'fix'} onClick={() => setFilter('fix')} />
+        <Card label="Check" value={count('check')} hint="Listen or set the gain"
+          selected={filter === 'check'} onClick={() => setFilter('check')} />
+        <Card label="OK" value={count('ok')} hint="Nothing to do"
+          selected={filter === 'ok'} onClick={() => setFilter('ok')} />
         <Card label="Missing files" value={rows.filter(r => r.missing).length} hint="Moved or renamed since"
           selected={filter === 'missing'} onClick={() => setFilter('missing')} />
-        <Card label="Median of this view" value={`${num(median(active))}`} hint="LUFS" />
+        <Card label="Median of this view" value={`${num(median(active.filter(isValid).map(r => r.integrated_lufs as number)))}`} hint="LUFS" />
       </div>
+      {active.length > 0 && !active.some(r => typeof r.tone_air_db === 'number') && (
+        <div className="callout">These results predate the loud-section and tonal-balance checks, and may lack bitrate and transcode data.
+          Analyze again from the <Link to="/library">Library</Link> to get a full verdict; files are measured again, never changed.</div>
+      )}
+      {folders.length > 0 && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <h3>Folders with the most problems</h3>
+          <table><tbody>
+            {folders.map(g => (
+              <tr key={g.dir}><td title={g.dir}>{g.dir.split('/').slice(-2).join('/')}</td>
+                <td className="num">{g.fix > 0 && <Badge tone="danger">{g.fix} fix</Badge>} {g.check > 0 && <Badge tone="warn">{g.check} check</Badge>}</td>
+                <td className="num"><small>{g.total} files</small></td></tr>
+            ))}
+          </tbody></table>
+        </div>
+      )}
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <div className="panel"><h3>Loudness vs true peak</h3><LoudnessScatter points={points} reference={ref} /></div>
         <div className="panel"><h3>Distribution</h3><LoudnessHistogram points={points} reference={ref} /></div>
@@ -122,8 +131,8 @@ export default function Analysis() {
         <table>
           <thead>
             <tr>
-              {header('filename', 'Track', false)}{header('integrated_lufs', 'LUFS')}{header('true_peak_dbtp', 'dBTP')}
-              {header('loudness_range_lu', 'LRA')}{header('delta', 'Δ reference')}<th>Interpretation</th>
+              {header('filename', 'Track', false)}{header('verdict', 'Verdict', false)}{header('integrated_lufs', 'LUFS')}
+              {header('true_peak_dbtp', 'dBTP')}{header('loud_lufs', 'Loud parts')}{header('delta', 'Trim to match')}
             </tr>
           </thead>
           <tbody>
@@ -131,11 +140,20 @@ export default function Analysis() {
               <tr key={`${r.path}-${r.id}`}>
                 <td title={r.path}>{r.filename}{r.missing && <> <Badge tone="warn">Missing</Badge></>}<br />
                   <small>{when(r.measured_at)}{r.origin === 'reused' ? ' · reused' : ''}</small></td>
-                <td className="num">{num(r.integrated_lufs, 2)}</td>
+                <td>
+                  <Badge tone={TONE[r.verdict.level]}>{LABEL[r.verdict.level]}</Badge>{' '}
+                  <b>{r.verdict.headline}</b><br />
+                  <small>{r.verdict.action}</small>
+                  {r.verdict.findings.length > 1 && (
+                    <details><summary><small>{r.verdict.findings.length - 1} more</small></summary>
+                      <ul>{r.verdict.findings.slice(1).map((x, i) => <li key={i}><small>{x.text}. {x.action}</small></li>)}</ul>
+                    </details>
+                  )}
+                </td>
+                <td className="num">{num(r.integrated_lufs, 2)}<br /><small>LRA {num(r.loudness_range_lu, 1)}</small></td>
                 <td className="num">{num(r.true_peak_dbtp, 2)}</td>
-                <td className="num">{num(r.loudness_range_lu, 1)}</td>
-                <td className="num">{r.delta === null ? '—' : `${num(r.delta, 1)} LU`}</td>
-                <td><small>{r.notes}</small></td>
+                <td className="num">{num(r.loud_lufs, 1)}</td>
+                <td className="num">{r.verdict.trim === null ? '—' : `${signed(r.verdict.trim, 1)} dB`}</td>
               </tr>
             ))}
           </tbody>
@@ -160,8 +178,9 @@ export default function Analysis() {
         </table>
       </div>
       <p className="muted" style={{ marginTop: 12 }}>
-        <small>LUFS is integrated loudness; dBTP estimates reconstructed peaks; LRA describes loudness variation. These do not
-          certify audio quality, and a positive Δ means louder than the reference, not that it needs correcting.</small>
+        <small>LUFS is integrated loudness; dBTP estimates reconstructed peaks; LRA is loudness variation; Loud parts is the
+          short-term loudness of the louder sections. Trim to match is the gain that would bring the song to the library
+          reference; nothing is applied. A verdict is guidance from measurements, so listen before replacing a file.</small>
       </p>
     </>
   )

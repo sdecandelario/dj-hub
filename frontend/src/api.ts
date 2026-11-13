@@ -123,6 +123,16 @@ export type Measurement = {
   codec: string
   sample_rate_hz: number | null
   channels: number | null
+  corrupt_frames?: number | null
+  bitrate_kbps?: number | null
+  hf_gap_17k_db?: number | null
+  hf_gap_19k_db?: number | null
+  loud_lufs?: number | null
+  momentary_max_lufs?: number | null
+  tone_low_db?: number | null
+  tone_mid_db?: number | null
+  tone_presence_db?: number | null
+  tone_air_db?: number | null
   run_id?: number
   missing?: boolean
 }

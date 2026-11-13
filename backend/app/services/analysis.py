@@ -15,7 +15,9 @@ from .library import register_file
 MEASURE_FIELDS = ("status", "error", "integrated_lufs", "true_peak_dbtp", "loudness_range_lu",
                   "duration_seconds", "codec", "sample_rate_hz", "channels")
 QUALITY_FIELDS = ("corrupt_frames", "audio_md5", "tag_artist", "tag_title", "album", "year",
-                  "bitrate_kbps", "has_art", "hf_gap_17k_db", "hf_gap_19k_db")
+                  "bitrate_kbps", "has_art", "hf_gap_17k_db", "hf_gap_19k_db",
+                  "loud_lufs", "momentary_max_lufs", "tone_low_db", "tone_mid_db", "tone_presence_db", "tone_air_db")
+DEEP_MARKER = "tone_air_db"  # measurements without it predate the loud-section and tone checks
 
 
 def measurement_row(m):
@@ -43,12 +45,15 @@ def cached_sha(session, path, stat):
     return None
 
 
-def reusable(session, sha, full, ffmpeg_version):
-    """A previous good measurement of the same bytes with the same ffmpeg."""
+def reusable(session, sha, full, ffmpeg_version, deep=False):
+    """A previous good measurement of the same bytes with the same ffmpeg. With deep=True, only one
+    that also has the loud-section and tonal-balance checks (older ones are measured again)."""
     query = select(Measurement).where(Measurement.sha256 == sha, Measurement.status == "OK")
     if full:
         query = query.where(Measurement.full.is_(True))
     for m in session.scalars(query.order_by(Measurement.id.desc())).all():
+        if deep and DEEP_MARKER not in (m.extra or {}):
+            continue
         if (m.extra or {}).get("ffmpeg_version") in (None, ffmpeg_version):
             return m
     return None
@@ -128,10 +133,12 @@ def run_analysis(ctx):
         sha = sha or audio.sha256_file(path)
         if ctx.params.get("reuse", True):
             with session_scope() as s:
-                old = reusable(s, sha, False, versions["ffmpeg_version"])
+                old = reusable(s, sha, False, versions["ffmpeg_version"], deep=True)
                 if old:
                     return path, stat, sha, measurement_row(old), True
         result = audio.measure(path)
+        if result["status"] == "OK":
+            result.update(audio.quality(path, result))
         after = path.stat()
         if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
             result.update(status="ERROR", error="File changed during analysis")

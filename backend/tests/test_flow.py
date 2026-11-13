@@ -172,3 +172,20 @@ def test_downloads_review_compares_with_the_library_copy(env):
     assert song["library_versions"][0]["file_id"]
     assert song["versions"][0]["vs_library"]["verdict"] == "better"
     assert lib_copy.stat().st_mtime_ns == before   # the library file is only read
+
+
+def test_analysis_keeps_loud_section_and_tone_checks_and_remeasures_old_results(env):
+    real_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Liebe.mp3")
+    first = runner.run_sync("analyze", {"path": str(env.root)}, echo=None)
+    with session_scope() as s:
+        row = analysis.run_tracks(s, first)[0]
+        assert row["tone_air_db"] is not None and row["tone_low_db"] is not None
+        assert row["loud_lufs"] is not None and row["bitrate_kbps"] and row["hf_gap_19k_db"] is not None
+        m = s.get(analysis.Measurement, row["id"])
+        m.extra = {k: v for k, v in m.extra.items() if k != analysis.DEEP_MARKER}  # an older result
+    second = runner.run_sync("analyze", {"path": str(env.root)}, echo=None)
+    with session_scope() as s:
+        assert analysis.run_tracks(s, second)[0]["origin"] == "app"  # measured again, not reused
+    third = runner.run_sync("analyze", {"path": str(env.root)}, echo=None)
+    with session_scope() as s:
+        assert analysis.run_tracks(s, third)[0]["origin"] == "reused"
