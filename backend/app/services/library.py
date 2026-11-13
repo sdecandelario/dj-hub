@@ -96,7 +96,7 @@ def make_plan(session, kind, payload, when=None, tracks=None):
                                "trash": o.label == "trash", "tags_before": o.tags_before} for o in ops])
     tracks = scan(session) if tracks is None else tracks
     if kind == "apply":
-        return lib.plan_apply(cfg.root, tracks, payload.get("items") or [])
+        return lib.plan_apply(cfg.root, tracks, payload.get("items") or [], trash=cfg.trash, when=when)
     if kind == "remove":
         return lib.plan_remove(cfg.root, cfg.trash, tracks, payload.get("paths") or [], when=when)
     if kind == "rename":
@@ -195,8 +195,11 @@ def apply(session_factory, batch_id):
                     if decision and paths and all(p in moved for p in paths):
                         decision.applied_batch_id = batch.id
             sync_library(session)
+            # A replacement puts a new file where an old one was trashed: measure the new one right away.
+            replaced = [step.dest for step in (done or []) if step.action == "move" and step.label != "trash"] \
+                if batch.kind == "apply" and any(step.label == "trash" for step in (done or [])) else []
             result = {"id": batch.id, "status": batch.status, "error": batch.error, "done": seq[0],
-                      "kind": batch.kind, "warnings": warnings}
+                      "kind": batch.kind, "warnings": warnings, "replaced": replaced}
         if error and not seq[0]:
             raise BatchError(error)
         return result

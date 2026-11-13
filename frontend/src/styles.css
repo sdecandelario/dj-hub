@@ -115,6 +115,8 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; 
 
 /* Tables */
 .table-wrap { overflow: auto; }
+/* .panel.flush clips its corners; without this it also beat .table-wrap and made capped tables unscrollable. */
+.panel.flush.table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); position: sticky; top: 0;

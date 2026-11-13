@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { api, type Batch, type LibraryVerdict, type LibraryVersion, type Review, type Song, type Version } from '../api'
 import { useBatch } from '../components/batch'
 import { PlayerBar, usePlayer, type Player } from '../components/player'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
+import { AnalyzeButton, isRunning, startJob, useActiveJobs } from '../components/jobs'
 import { Badge, Card, duration, Empty, ErrorNote, num, plural, signed } from '../components/ui'
 
 type Filter = 'todo' | 'decided' | 'later' | 'wanted' | 'all'
@@ -19,9 +19,14 @@ const VERDICT: Record<LibraryVerdict['verdict'], { label: string; tone: string }
 function VerdictBadge({ v }: { v: LibraryVerdict }) {
   const { label, tone } = VERDICT[v.verdict]
   const note = v.length_differs ? ' Different length from the library copy: maybe another edit.' : ''
-  return <Badge tone={tone} title={`${v.reason}.${note}\nLibrary copy: ${v.library_path}`}>
+  const loud = v.loudness_diff !== null && Math.abs(v.loudness_diff) >= 4 ? v.loudness_diff : 0
+  return <><Badge tone={tone} title={`${v.reason}.${note}\nLibrary copy: ${v.library_path}`}>
     {label}{v.length_differs ? ' · other length' : ''}
   </Badge>
+  {loud && <> <Badge tone={loud > 0 ? 'info' : 'warn'} title="Loudness difference from the library copy (integrated LUFS)">
+    {loud > 0 ? 'Louder' : 'Quieter'} than library {signed(loud, 1)} LU
+  </Badge></>}
+  </>
 }
 
 const isLossless = (codec: string) => ['flac', 'alac'].includes(codec) || codec.startsWith('pcm')
@@ -38,7 +43,8 @@ function LibraryRow({ song, v, median, player }: {
       <td>
         <button className={`small${isPlaying ? ' on' : ''}`} onClick={() => player.play({ song: song.id, file: v.file_id, title: song.song, name: v.name })}>
           {isPlaying ? '❚❚' : '▶'}
-        </button>
+        </button>{' '}
+        <AnalyzeButton path={v.path} />
       </td>
       <td style={{ minWidth: 240 }}>
         <div title={v.path}><Badge>In library</Badge> {v.name}</div>
@@ -70,7 +76,8 @@ function VersionRow({ song, v, median, kept, onKeep, player }: {
       <td>
         <button className={`small${isPlaying ? ' on' : ''}`} onClick={() => player.play({ song: song.id, file: v.file_id, title: song.song, name: v.name })}>
           {isPlaying ? '❚❚' : '▶'}
-        </button>
+        </button>{' '}
+        <AnalyzeButton path={v.path} />
       </td>
       <td style={{ minWidth: 240 }}>
         <div title={v.path}>{v.name}</div>
@@ -95,6 +102,28 @@ function VersionRow({ song, v, median, kept, onKeep, player }: {
         {num(v.hf_gap_19k_db, 0)}
       </td>
     </tr>
+  )
+}
+
+/** What keeping a download means when the song is already in the library: nothing is replaced automatically. */
+function ReplaceNotice({ song, verdict }: { song: Song; verdict?: LibraryVerdict }) {
+  const where = song.in_library.join(', ')
+  const outcome = {
+    better: 'This download looks better than the library copy.',
+    worse: 'This download looks worse than the library copy, so rejecting it is probably right.',
+    similar: 'This download has about the same quality as the library copy.',
+    same: 'This download is the same audio as the library copy.',
+  }[verdict?.verdict ?? 'similar']
+  const loud = verdict?.loudness_diff
+  const level = loud != null && Math.abs(loud) >= 4
+    ? ` It is ${Math.abs(loud).toFixed(1)} LU ${loud > 0 ? 'louder' : 'quieter'}.` : ''
+  return (
+    <div className={`callout ${verdict?.verdict === 'better' ? 'info' : 'warn'}`}>
+      <b>Already in the library:</b> {where}.{' '}
+      {verdict ? `${outcome}${level} ` : 'The library copy could not be measured. '}
+      Keeping the download does <b>not</b> replace it: both copies stay (the new one in 00 Inbox)
+      {verdict?.verdict === 'better' ? ' until you send the old one to the Trash from the Library.' : '.'}
+    </div>
   )
 }
 
@@ -138,6 +167,7 @@ function SongCard({ song, median, player, onDecide, highlight }: {
         <button className="small" onClick={() => onDecide('later')}>Later</button>
         {d && <button className="small ghost" onClick={() => onDecide('clear')}>Clear</button>}
       </header>
+      {song.in_library.length > 0 && <ReplaceNotice song={song} verdict={pick?.vs_library} />}
       <div className="table-wrap">
         <table>
           <thead>

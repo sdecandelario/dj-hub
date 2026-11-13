@@ -57,7 +57,33 @@ def files(kind: str | None = None, folder: str | None = None, q: str | None = No
     if rows:
         for m in analysis.latest_by_path(session, [r.path for r in rows]):
             latest[m["path"]] = m
-    return [file_dict(r) | {"loudness": latest.get(r.path)} for r in rows]
+    out = [file_dict(r) | {"loudness": latest.get(r.path)} for r in rows]
+    if kind == "inbox" and area == "library":
+        _mark_already_in_library(session, out, rows)
+    return out
+
+
+def _mark_already_in_library(session, out, inbox_rows):
+    """Inbox rows get `in_library`: copies of the same song in genre or session folders (same audio file, or
+    same artist and title), so a duplicate is known before moving."""
+    others = session.scalars(select(File).where(File.area == "library", File.present.is_(True),
+                                                File.kind.in_(["genre", "session"]))).all()
+    by_fp, by_name = {}, {}
+    for o in others:
+        if o.quick_fp:
+            by_fp.setdefault(o.quick_fp, []).append(o)
+        if o.title:
+            by_name.setdefault(lib.match_key(o.artist, o.title), []).append(o)
+    loudness = {m["path"]: m for m in analysis.latest_by_path(session, [o.path for o in others])}
+    for entry, row in zip(out, inbox_rows):
+        hits = {o.path: (o, "file") for o in by_fp.get(row.quick_fp, [])} if row.quick_fp else {}
+        if row.title:
+            for o in by_name.get(lib.match_key(row.artist, row.title), []):
+                hits.setdefault(o.path, (o, "name"))
+        entry["in_library"] = [
+            {"rel_path": o.rel_path, "kind": o.kind, "folder": o.folder, "match": match,
+             "integrated_lufs": (loudness.get(o.path) or {}).get("integrated_lufs")}
+            for o, match in hits.values()]
 
 
 @router.get("/library/status")
@@ -130,6 +156,8 @@ def apply(batch_id: int):
         result = library.apply(session_scope, batch_id)
     except library.BatchError as exc:
         raise HTTPException(409, str(exc))
+    if result.get("replaced"):
+        runner.submit("analyze", {"paths": result["replaced"], "reuse": True})
     with session_scope() as s:
         if s.scalar(select(func.count()).select_from(Playlist)):
             runner.submit("match_playlists")

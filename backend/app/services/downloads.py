@@ -150,7 +150,8 @@ def latest_review(session):
 
 def review_view(session):
     """Latest review with your decisions and the playlists that want each song.
-    Songs whose decision was applied are left out (their files have moved)."""
+    Songs whose decision was applied are left out while their files are gone (they have moved). A file back in
+    the download folder (downloaded again, or the batch was undone) is a new song to decide."""
     review = latest_review(session)
     if review is None:
         return None
@@ -160,12 +161,14 @@ def review_view(session):
     songs = []
     for song in payload["songs"]:
         decision = decisions.get(song["id"])
+        present = [v for v in song["versions"] if Path(v["path"]).is_file()]
         if decision and decision.applied_batch_id:
-            continue
+            if not present:
+                continue
+            decision = None
         paths = {v["path"] for v in song["versions"]}
         if decision and decision.choice == "keep" and decision.keep_path not in paths:
             decision = None
-        present = [v for v in song["versions"] if Path(v["path"]).is_file()]
         songs.append({**song, "gone": len(present) < len(song["versions"]),
                       "decision": None if decision is None else {
                           "choice": decision.choice, "keep_path": decision.keep_path,

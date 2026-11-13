@@ -3,10 +3,14 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AnalysisOverview, type Measurement } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
+import { AnalyzeButton } from '../components/jobs'
 import { Badge, Card, ErrorNote, num, signed, StatusBadge, when } from '../components/ui'
 import { contextFor, isValid, judge, median, order, type Level, type Verdict } from '../verdict'
 
 type Row = Measurement & { delta: number | null; verdict: Verdict }
+
+/** Folder of a file, with the home folder shortened to ~. */
+const folderOf = (path: string) => path.replace(/\/[^/]*$/, '').replace(/^\/Users\/[^/]+/, '~')
 
 const TONE = { fix: 'danger', check: 'warn', ok: 'ok' } as const
 const LABEL = { fix: 'Fix', check: 'Check', ok: 'OK' } as const
@@ -139,7 +143,9 @@ export default function Analysis() {
             {shown.map(r => (
               <tr key={`${r.path}-${r.id}`}>
                 <td title={r.path}>{r.filename}{r.missing && <> <Badge tone="warn">Missing</Badge></>}<br />
-                  <small>{when(r.measured_at)}{r.origin === 'reused' ? ' · reused' : ''}</small></td>
+                  <small className="mono muted" style={{ display: 'block', overflowWrap: 'anywhere' }}>{folderOf(r.path)}</small>
+                  <small>{when(r.measured_at)}{r.origin === 'reused' ? ' · reused' : ''}</small>
+                  {!r.missing && <> <AnalyzeButton path={r.path} /></>}</td>
                 <td>
                   <Badge tone={TONE[r.verdict.level]}>{LABEL[r.verdict.level]}</Badge>{' '}
                   <b>{r.verdict.headline}</b><br />

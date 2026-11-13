@@ -26,7 +26,7 @@ class Config:
     db_path: Path = field(default_factory=lambda: _path(
         os.environ.get("DJ_HUB_DB", "~/.local/share/dj-hub/dj-hub.db")))
     frontend_url: str = field(default_factory=lambda: os.environ.get("DJ_HUB_FRONTEND", "http://127.0.0.1:8000"))
-    settle_seconds: int = 120
+    settle_seconds: int = 0
     workers: int = field(default_factory=lambda: max(1, min(4, (os.cpu_count() or 2) // 2)))
 
 

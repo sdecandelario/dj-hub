@@ -5,7 +5,7 @@ import { api, audioUrl, type Batch, type FileDetail, type LibraryFile, type Tree
 import { useBatch } from '../components/batch'
 import { HistoryChart } from '../components/charts'
 import { PlayerBar, usePlayer } from '../components/player'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
+import { AnalyzeButton, isRunning, startJob, useActiveJobs } from '../components/jobs'
 import { Badge, Empty, ErrorNote, num, plural, StatusBadge, when } from '../components/ui'
 
 const GENRES = 'Genres', SESSIONS = 'Sessions', INBOX = '00 Inbox'
@@ -181,6 +181,8 @@ export default function Library() {
   const player = usePlayer()
   const [edits, setEdits] = useState<Record<string, { artist?: string; title?: string }>>({})
   const [genres, setGenres] = useState<Record<string, string>>({})
+  // Inbox files that replace the copy already in a genre folder (the old copy goes to the Trash).
+  const [replacing, setReplacing] = useState<Record<string, boolean>>({})
   // Kept as file objects so the selection survives searches that no longer list those files.
   const [checked, setChecked] = useState<Map<string, LibraryFile>>(new Map())
   const batch = useBatch()
@@ -200,21 +202,30 @@ export default function Library() {
       : Object.fromEntries(Object.entries(o).filter(([k]) => listed.has(k))))
     setEdits(keep)
     setGenres(keep)
+    setReplacing(keep)
   }, [files.data, search])
-  const pick = (k: string, f: string) => { setGenres({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
+  const pick = (k: string, f: string) => { setGenres({}); setReplacing({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)
     if (id) next.set('file', String(id)); else next.delete('file')
     setParams(next)
   }
   const path = folderPath(kind, folder)
+  // A replacement goes to the genre of the copy it replaces; the rest go where the dropdown says.
+  const genreCopy = (f: LibraryFile) => f.in_library?.find(c => c.kind === 'genre')
+  const moves: Record<string, string> = {}
+  for (const f of files.data ?? []) {
+    const rep = replacing[f.rel_path] ? genreCopy(f) : undefined
+    const g = rep ? rep.folder : genres[f.rel_path]
+    if (g) moves[f.rel_path] = g
+  }
   const sortInbox = () => batch.preview(() => api.post<Batch>('/batches/preview', {
     kind: 'apply',
-    payload: { items: Object.entries(genres).filter(([rel, g]) => g && files.data?.some(x => x.rel_path === rel)).map(([rel, g]) => {
+    payload: { items: Object.entries(moves).map(([rel, g]) => {
       // Unsaved name edits travel with the move, so they are not lost.
       const f = files.data?.find(x => x.rel_path === rel), e = edits[rel]
       const edited = f && e && ((e.artist ?? f.artist ?? '') !== (f.artist ?? '') || (e.title ?? f.title ?? '') !== (f.title ?? ''))
-      return { source: rel, to: `${GENRES}/${g}`, action: 'move',
+      return { source: rel, to: `${GENRES}/${g}`, action: 'move', ...(replacing[rel] && { replace: true }),
         ...(edited && { artist: e.artist ?? f.artist ?? '', title: e.title ?? f.title ?? '' }) }
     }) },
   }))
@@ -227,7 +238,7 @@ export default function Library() {
       items: renames.map(f => ({ source: f.rel_path, artist: edits[f.rel_path].artist ?? f.artist ?? '', title: edits[f.rel_path].title ?? f.title ?? '' })) } })
   })
   // A saved rename gives the file a new path; choices made under the old path no longer count.
-  const chosen = Object.entries(genres).filter(([rel, g]) => g && files.data?.some(x => x.rel_path === rel)).length
+  const chosen = Object.keys(moves).length
   // The selection can include files hidden by the current search.
   const checkedFiles = [...checked.values()]
   const listedChecked = files.data?.filter(f => checked.has(f.rel_path)).length ?? 0
@@ -274,7 +285,14 @@ export default function Library() {
               <button className="small" title="Fill missing artist and title tags from the file names" onClick={() => fixTags(false)}>Fix missing tags</button>
               <button className="small" title="Set every genre tag to its genre folder name" onClick={() => fixTags(true)}>Fix tags + genre</button>
             </>)}
-            {kind === 'rejected' && !!files.data?.length && (
+            {kind === 'inbox' && (files.data?.filter(f => f.in_library?.length).length ?? 0) > 0 && (
+            <div className="callout warn">
+              {plural(files.data!.filter(f => f.in_library?.length).length, 'song')} in the Inbox {files.data!.filter(f => f.in_library?.length).length === 1 ? 'is' : 'are'} already
+              in the library (see the badges). Moving does not replace anything: compare them, then keep one copy and
+              send the other to the Trash.
+            </div>
+          )}
+          {kind === 'rejected' && !!files.data?.length && (
               <button className="small danger" onClick={() => batch.preview(() => api.post<Batch>('/batches/preview', { kind: 'remove', payload: { paths: ['00 Rejected'] } }))}>
                 Empty 00 Rejected
               </button>
@@ -317,7 +335,8 @@ export default function Library() {
                       <button className={`small${player.isPlaying(f.id) ? ' on' : ''}`} aria-label="Play"
                         onClick={() => player.play({ song: String(f.id), file: f.id, title: f.title || f.name, name: f.rel_path })}>
                         {player.isPlaying(f.id) ? '❚❚' : '▶'}
-                      </button>
+                      </button>{' '}
+                      <AnalyzeButton path={f.path} />
                     </td>
                     {kind === 'inbox' ? (<>
                       <td onClick={e => e.stopPropagation()}>
@@ -328,6 +347,11 @@ export default function Library() {
                         <input className="inline-edit" value={edits[f.rel_path]?.title ?? f.title ?? f.name} aria-label="Title"
                           onChange={e => setEdits({ ...edits, [f.rel_path]: { ...edits[f.rel_path], title: e.target.value } })} />
                         {f.genre_tag && <> <small className="muted">{f.genre_tag}</small></>}
+                        {!!f.in_library?.length && <> <Badge tone="warn" title={f.in_library.map(c =>
+                          `${c.rel_path} (${c.match === 'file' ? 'same file' : 'same artist and title'}${c.integrated_lufs != null ? `, ${c.integrated_lufs.toFixed(1)} LUFS` : ''})`).join('\n')}>
+                          Already in {f.in_library[0].kind === 'genre' ? f.in_library[0].folder : `session ${f.in_library[0].folder}`}
+                          {f.in_library.length > 1 ? ` +${f.in_library.length - 1}` : ''}
+                        </Badge></>}
                       </td>
                     </>) : (<>
                       <td>{f.artist || <span className="muted">—</span>}</td>
@@ -339,10 +363,18 @@ export default function Library() {
                     <td className="num">{num(f.loudness?.true_peak_dbtp)}</td>
                     {kind === 'inbox' && (
                       <td onClick={e => e.stopPropagation()}>
-                        <select value={genres[f.rel_path] ?? ''} onChange={e => setGenres({ ...genres, [f.rel_path]: e.target.value })}>
-                          <option value="">—</option>
-                          {tree.data?.genres.map(g => <option key={g}>{g}</option>)}
-                        </select>
+                        {genreCopy(f) && (
+                          <label title={`Send ${genreCopy(f)!.rel_path} to the Trash and put this file in its place (undo restores it)`}>
+                            <input type="checkbox" checked={!!replacing[f.rel_path]}
+                              onChange={e => setReplacing({ ...replacing, [f.rel_path]: e.target.checked })} /> Replace{' '}
+                          </label>
+                        )}
+                        {replacing[f.rel_path] && genreCopy(f)
+                          ? <small>in {genreCopy(f)!.folder}</small>
+                          : <select value={genres[f.rel_path] ?? ''} onChange={e => setGenres({ ...genres, [f.rel_path]: e.target.value })}>
+                              <option value="">—</option>
+                              {tree.data?.genres.map(g => <option key={g}>{g}</option>)}
+                            </select>}
                       </td>
                     )}
                   </tr>

@@ -67,6 +67,24 @@ def test_downloads_review_pick_and_intake(env):
         assert s.get(Job, job).summary["measured"] == 0
 
 
+def test_a_song_downloaded_again_after_its_decision_was_applied_is_shown_again(env):
+    real_audio(env.downloads / "Molchat Doma - Sudno.mp3", frequency=300)
+    runner.run_sync("review_downloads", {}, echo=None)
+    with session_scope() as s:
+        song = downloads.review_view(s)["songs"][0]
+        downloads.decide(s, song["id"], "keep", song["suggested"])
+    with session_scope() as s:
+        batch = downloads.preview_intake(s).id
+    library.apply(session_scope, batch)
+    with session_scope() as s:
+        assert downloads.review_view(s)["songs"] == []        # moved: nothing left to decide
+    real_audio(env.downloads / "Molchat Doma - Sudno.mp3", frequency=300)   # downloaded again, same path
+    runner.run_sync("review_downloads", {}, echo=None)
+    with session_scope() as s:
+        songs = downloads.review_view(s)["songs"]
+        assert len(songs) == 1 and songs[0]["decision"] is None
+
+
 def test_playlist_matching_and_waiting_downloads(env):
     real_audio(env.root / "Genres" / "Synth-Pop & New Wave" / "Soft Cell - Tainted Love.mp3")
     real_audio(env.downloads / "Molchat Doma - Sudno.mp3")

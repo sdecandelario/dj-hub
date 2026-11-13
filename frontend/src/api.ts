@@ -103,6 +103,8 @@ export type LibraryFile = {
   present: boolean
   quick_fp: string | null
   loudness?: Loudness | null
+  /** Inbox rows only: copies of the same song already in genre or session folders. */
+  in_library?: { rel_path: string; kind: string; folder: string; match: 'file' | 'name'; integrated_lufs: number | null }[]
 }
 
 export type Measurement = {
@@ -210,6 +212,8 @@ export type LibraryVerdict = {
   reason: string
   library_path: string
   length_differs: boolean
+  /** LU louder (+) or quieter (-) than the library copy; null when not measured. */
+  loudness_diff: number | null
 }
 
 export type LibraryVersion = Pick<Version, 'path' | 'name' | 'file_id' | 'sha256' | 'status' | 'integrated_lufs'

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlaylistInfo, type PlaylistTrack } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
+import { AnalyzeButton, isRunning, startJob, useActiveJobs } from '../components/jobs'
 import { Badge, Card, downloadCsv, Empty, ErrorNote, StatusBadge, when } from '../components/ui'
 
 type Filter = 'missing' | 'maybe' | 'waiting' | 'downloaded' | 'have' | 'all'
@@ -122,7 +122,7 @@ export default function Playlists() {
                 <td><a href={`https://open.spotify.com/track/${t.spotify_id}`} target="_blank" rel="noreferrer">{t.title}</a></td>
                 <td><StatusBadge status={t.status} label={STATUS_LABEL[t.status]} /></td>
                 <td>
-                  {t.match && <small title={t.match.path}>{t.match.relative_path}{t.match.note && ` · ${t.match.note}`}</small>}
+                  {t.match && <><small title={t.match.path}>{t.match.relative_path}{t.match.note && ` · ${t.match.note}`}</small> <AnalyzeButton path={t.match.path} /></>}
                   {t.status !== 'have' && t.download && (
                     <div><Link to={`/downloads?song=${t.download.song_key}`}><Badge tone="accent">Download waiting</Badge></Link></div>
                   )}

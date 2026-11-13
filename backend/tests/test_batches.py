@@ -242,3 +242,62 @@ def test_move_from_inbox_rejects_empty_title(env):
     item = {"source": "00 Inbox/A - B.mp3", "to": "Genres/X", "action": "move", "artist": "A2", "title": " "}
     p = plan("apply", {"items": [item]})
     assert "title cannot be empty" in p.problems[0]
+
+
+def test_move_from_inbox_notes_a_song_already_in_a_genre_folder(env):
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3", content=b"a")
+    fake_audio(env.root / "00 Inbox" / "DAF - Kebab.mp3", content=b"b")   # other audio, same artist and title
+    p = plan("apply", {"items": [{"source": "00 Inbox/DAF - Kebab.mp3", "to": "Genres/Synth-Pop & New Wave", "action": "move"}]})
+    assert p.runnable() and not p.problems
+    assert any("already in the library" in n and "Genres/EBM & Industrial/DAF - Kebab.mp3" in n for n in p.notes)
+
+
+def test_inbox_listing_flags_songs_already_in_the_library(env):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3", content=b"a")
+    fake_audio(env.root / "00 Inbox" / "DAF - Kebab.mp3", content=b"b")
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3", content=b"c")
+    with session_scope() as s:
+        library.sync_library(s)
+    rows = {r["name"]: r for r in TestClient(app).get("/api/library/files", params={"kind": "inbox"}).json()}
+    assert rows["DAF - Kebab.mp3"]["in_library"][0]["rel_path"] == "Genres/EBM & Industrial/DAF - Kebab.mp3"
+    assert rows["Yazoo - Situation.mp3"]["in_library"] == []
+
+
+def test_replace_sends_the_old_genre_copy_to_the_trash_and_undo_restores_it(env):
+    old = fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3", content=b"a")
+    new = fake_audio(env.root / "00 Inbox" / "DAF - Kebab.mp3", content=b"b")
+    item = {"source": "00 Inbox/DAF - Kebab.mp3", "to": "Genres/Other", "action": "move", "replace": True}
+    p = plan("apply", {"items": [item]})
+    assert not p.problems and [s.label for s in p.runnable()] == ["trash", ""]   # the target genre is the old one
+    batch = preview("apply", {"items": [item]})
+    assert old.exists() and new.exists()                                           # a preview changes nothing
+    result = library.apply(session_scope, batch)
+    assert result["status"] == "applied" and result["replaced"] == [str(old)]   # these get measured right away
+    assert old.read_bytes().endswith(b"b" * 10) and not new.exists()               # the new file took its place
+    assert any(env.trash.rglob("DAF - Kebab.mp3"))
+
+    library.apply(session_scope, preview("undo", {"batch_id": batch}))
+    assert old.read_bytes().endswith(b"a" * 10) and new.read_bytes().endswith(b"b" * 10)
+
+
+def test_replace_needs_something_to_replace(env):
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
+    p = plan("apply", {"items": [{"source": "00 Inbox/Yazoo - Situation.mp3", "to": "Genres/X",
+                                  "action": "move", "replace": True}]})
+    assert not p.runnable() and "no copy in a genre folder" in p.problems[0]
+
+
+def test_a_remaster_title_is_found_as_the_same_song_in_the_library(env):
+    from .conftest import real_audio
+
+    real_audio(env.root / "Genres" / "Post-Punk & Dark Wave" / "Killing Joke - Wardance.mp3",
+               title="Wardance", artist="Killing Joke", frequency=300)
+    real_audio(env.root / "00 Inbox" / "Killing Joke - Wardance - 2005 Digital Remaster.mp3",
+               title="Wardance - 2005 Digital Remaster", artist="Killing Joke", frequency=500)
+    p = plan("apply", {"items": [{"source": "00 Inbox/Killing Joke - Wardance - 2005 Digital Remaster.mp3",
+                                  "to": "Genres/Post-Punk & Dark Wave", "action": "move"}]})
+    assert any("already in the library" in n for n in p.notes)
