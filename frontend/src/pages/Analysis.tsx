@@ -142,7 +142,7 @@ export default function Analysis() {
           <tbody>
             {shown.map(r => (
               <tr key={`${r.path}-${r.id}`}>
-                <td title={r.path}>{r.filename}{r.missing && <> <Badge tone="warn">Missing</Badge></>}<br />
+                <td>{r.filename}{r.missing && <> <Badge tone="warn">Missing</Badge></>}<br />
                   <small className="mono muted" style={{ display: 'block', overflowWrap: 'anywhere' }}>{folderOf(r.path)}</small>
                   <small>{when(r.measured_at)}{r.origin === 'reused' ? ' · reused' : ''}</small>
                   {!r.missing && <> <AnalyzeButton path={r.path} /></>}</td>

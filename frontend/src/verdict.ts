@@ -65,8 +65,10 @@ export function judge(row: Measurement, ctx: Context): Verdict {
   if (ok && delta !== null && trim !== null) {
     const headroom = PEAK_CEILING - peak               // dB of boost available before passing the ceiling
     if (trim > 0 && trim > headroom + 0.5) {
-      add(trim > 3 ? 'fix' : 'check', `${db(trim)} dB would match the library but only ${Math.max(headroom, 0).toFixed(1)} dB of headroom`,
-        'Raising the gain would clip: find a louder master, or accept playing it lower.')
+      // A quiet file is not a broken file: the mixer trim has room above 0 dBFS, so this only asks for a listen.
+      // It never counts as Fix; only the file itself (errors, transcode, very low bitrate) does.
+      add('check', `${db(trim)} dB of trim would match the library; peaks would reach ${db(peak + trim, 1)} dBTP`,
+        'Set the trim on the mixer and watch the master meter. Look for a louder master only if it distorts.')
     } else if (Math.abs(delta) > 6) {
       add('check', `${Math.abs(delta).toFixed(1)} LU ${delta < 0 ? 'quieter' : 'louder'} than the library`,
         `Set the trim to ${db(trim)} dB and compare mixing passages; another master may sit better.`)
