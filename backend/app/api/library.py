@@ -54,10 +54,7 @@ def files(kind: str | None = None, folder: str | None = None, q: str | None = No
         rows = [r for r in rows if all(w in lib.normalize(f"{r.artist} {r.title} {r.rel_path or r.path}")
                                        for w in words)]
     # Latest loudness per file, for the table.
-    latest = {}
-    if rows:
-        for m in analysis.latest_by_path(session, [r.path for r in rows]):
-            latest[m["path"]] = m
+    latest = analysis.latest_for_files(session, rows)
     return [file_dict(r) | {"loudness": latest.get(r.path)} for r in rows]
 
 

@@ -254,3 +254,31 @@ def test_moved_file_keeps_its_hash_and_first_seen(env):
     with session_scope() as s:
         moved = s.query(File).filter(File.path.like("%Genres%A - One.mp3")).one()
         assert moved.sha256 == "abc" and moved.first_seen == first
+
+
+def test_a_move_keeps_the_file_row_and_its_loudness_shows_in_the_table(client, env):
+    from app.models import File, Measurement
+    from app.services import library
+    from .conftest import fake_audio
+
+    song = fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    with session_scope() as s:
+        library.sync_library(s)
+        row = s.query(File).filter_by(path=str(song)).one()
+        row.sha256 = "abc"
+        file_id, first = row.id, row.first_seen
+        s.add(Measurement(path=str(song), sha256="abc", status="OK", integrated_lufs=-9.5, full=False))
+    with session_scope() as s:
+        batch = library.preview(s, "apply", {"items": [{"source": "00 Inbox/A - One.mp3",
+                                                        "to": "Genres/EBM & Industrial", "action": "move"}]}).id
+    library.apply(session_scope, batch)
+    with session_scope() as s:
+        moved = s.get(File, file_id)   # the same row, not a new one
+        assert moved.path.endswith("Genres/EBM & Industrial/A - One.mp3") and moved.first_seen == first
+        assert s.query(File).count() == 1
+    shown = client.get("/api/library/files", params={"kind": "genre"}).json()
+    assert shown[0]["id"] == file_id and shown[0]["loudness"]["integrated_lufs"] == -9.5   # found by hash
+    undo = client.post(f"/api/batches/{batch}/undo").json()["id"]
+    library.apply(session_scope, undo)
+    with session_scope() as s:
+        assert s.get(File, file_id).path == str(song) and s.query(File).count() == 1   # and back again

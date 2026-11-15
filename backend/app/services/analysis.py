@@ -283,14 +283,25 @@ def overview_references(session):
     return out
 
 
-def latest_by_path(session, paths):
-    """The newest measurement of each path (for library tables)."""
-    latest = {}
-    for start in range(0, len(paths), 500):
-        chunk = paths[start:start + 500]
-        for m in session.scalars(select(Measurement).where(Measurement.path.in_(chunk))
-                                 .order_by(Measurement.id)).all():
-            latest[m.path] = m
-    return [{"path": m.path, "status": m.status, "integrated_lufs": m.integrated_lufs,
-             "true_peak_dbtp": m.true_peak_dbtp, "loudness_range_lu": m.loudness_range_lu,
-             "measured_at": m.measured_at} for m in latest.values()]
+def latest_for_files(session, files):
+    """{file path: newest measurement} (for library tables): found by the file's path, or by its hash,
+    so a file that was moved or renamed after it was measured still shows its loudness."""
+    by_path, by_sha = {}, {}
+    for start in range(0, len(files), 500):
+        chunk = files[start:start + 500]
+        paths = [f.path for f in chunk]
+        shas = [f.sha256 for f in chunk if f.sha256]
+        for m in session.scalars(select(Measurement).where(
+                Measurement.path.in_(paths) | Measurement.sha256.in_(shas)).order_by(Measurement.id)).all():
+            by_path[m.path] = m
+            if m.sha256:
+                by_sha[m.sha256] = m
+    out = {}
+    for f in files:
+        found = [m for m in (by_path.get(f.path), by_sha.get(f.sha256) if f.sha256 else None) if m]
+        if found:
+            m = max(found, key=lambda x: x.id)
+            out[f.path] = {"path": f.path, "status": m.status, "integrated_lufs": m.integrated_lufs,
+                           "true_peak_dbtp": m.true_peak_dbtp, "loudness_range_lu": m.loudness_range_lu,
+                           "measured_at": m.measured_at}
+    return out

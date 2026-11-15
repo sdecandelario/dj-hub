@@ -220,6 +220,7 @@ def apply(session_factory, batch_id):
                     decision = session.get(Decision, key)
                     if decision and paths and all(p in moved for p in paths):
                         decision.applied_batch_id = batch.id
+            follow_moves(session, batch_id)
             sync_library(session)
             result = {"id": batch.id, "status": batch.status, "error": batch.error, "done": seq[0],
                       "kind": batch.kind, "warnings": warnings}
@@ -238,6 +239,28 @@ def forget_unexecuted_ops(session, batch_id, only=None):
         if op.action != "tags" and not Path(op.dest).exists():
             session.delete(op)
     session.flush()
+
+
+def follow_moves(session, batch_id):
+    """A moved file is the same file: its row in the files table gets the new path instead of a new row
+    appearing, so its id (links, selections), stored hash and first-seen date stay with it. Follows the
+    batch's move log in order, so a file moved twice ends at its last place."""
+    ops = session.scalars(select(FileOp).where(FileOp.batch_id == batch_id, FileOp.action == "move")
+                          .order_by(FileOp.seq)).all()
+    for op in ops:
+        row = session.scalar(select(File).where(File.path == op.source, File.area == "library"))
+        if row is None:
+            continue
+        there = session.scalar(select(File).where(File.path == op.dest))
+        if there is not None and there.id != row.id:
+            if there.present and there.area == "library" and Path(op.dest).exists() and not Path(op.source).exists():
+                pass   # a live row already tracks the destination; the next scan reconciles the old one
+            else:
+                session.delete(there)   # a leftover row of a file that was here before and left
+                session.flush()
+        if session.scalar(select(File).where(File.path == op.dest)) is None:
+            row.path = op.dest
+            session.flush()
 
 
 def recover_batches(session):
