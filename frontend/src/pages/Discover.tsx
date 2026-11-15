@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { api, type Candidate } from '../api'
 import { isRunning, startJob, useActiveJobs } from '../components/jobs'
-import { Badge, Card, downloadCsv, Empty, ErrorNote, StatusBadge } from '../components/ui'
+import { Badge, Card, downloadCsv, Empty, ErrorNote } from '../components/ui'
 
 type Status = Candidate['status']
 
@@ -77,7 +77,7 @@ export default function Discover() {
       <div className="panel flush table-wrap">
         <table>
           <thead>
-            <tr><th>Artist</th><th>Title</th><th>Because you have</th><th>Notes</th><th>Decision</th></tr>
+            <tr><th>Artist</th><th>Title</th><th>Because you have</th><th>Notes</th><th className="actions">Decision</th></tr>
           </thead>
           <tbody>
             {rows.map(c => (
@@ -86,7 +86,6 @@ export default function Discover() {
                 <td>
                   <a href={`https://open.spotify.com/search/${encodeURIComponent(`${c.artist} ${c.title}`)}`}
                     target="_blank" rel="noreferrer">{c.title}</a>
-                  {status !== 'new' && <> <StatusBadge status={c.status} label={LABEL[c.status]} /></>}
                 </td>
                 <td><small title={`Score ${c.score.toFixed(1)}`}>{c.because.join(', ')}</small></td>
                 <td>
@@ -104,17 +103,18 @@ export default function Discover() {
                     </Badge></div>
                   )}
                 </td>
-                <td>
+                <td className="actions">
                   <div className="row">
-                    {status !== 'wanted' && (
-                      <button className="small" onClick={() => mark.mutate({ ids: [c.id], to: 'wanted' })}>Want</button>
-                    )}
-                    {status !== 'dismissed' && (
-                      <button className="small ghost" onClick={() => mark.mutate({ ids: [c.id], to: 'dismissed' })}>Dismiss</button>
-                    )}
-                    {status !== 'new' && (
-                      <button className="small ghost" onClick={() => mark.mutate({ ids: [c.id], to: 'new' })}>Back to new</button>
-                    )}
+                    <button className={`small ok${c.status === 'wanted' ? ' on' : ''}`}
+                      title={c.status === 'wanted' ? 'Click again to undo' : 'Add to the wanted list'}
+                      onClick={() => mark.mutate({ ids: [c.id], to: c.status === 'wanted' ? 'new' : 'wanted' })}>
+                      Want
+                    </button>
+                    <button className={`small danger${c.status === 'dismissed' ? ' on' : ''}`}
+                      title={c.status === 'dismissed' ? 'Click again to undo' : 'Never suggest this again'}
+                      onClick={() => mark.mutate({ ids: [c.id], to: c.status === 'dismissed' ? 'new' : 'dismissed' })}>
+                      Dismiss
+                    </button>
                   </div>
                 </td>
               </tr>

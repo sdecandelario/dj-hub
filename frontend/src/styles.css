@@ -98,7 +98,15 @@ button, .button { font: inherit; border: 1px solid var(--border); background: va
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+/* Decision buttons: green = accept, red = reject. `.on` marks the current choice. */
+button.ok { color: var(--ok); }
 button.danger { color: var(--danger); }
+button.ok:hover:not(:disabled) { border-color: var(--ok); background: var(--ok-soft); }
+button.danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
+button.ok.on { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 600; }
+button.danger.on { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); font-weight: 600; }
+td.actions { width: 1%; white-space: nowrap; }
+td.actions .row { flex-wrap: nowrap; }
 button.small { padding: 3px 8px; font-size: 12px; }
 button.ghost { border-color: transparent; background: transparent; }
 button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
