@@ -180,3 +180,21 @@ def test_only_the_latest_reviews_are_kept(env):
         runner.run_sync("review_downloads", {}, echo=None)
     with session_scope() as s:
         assert s.query(Review).count() == downloads.KEEP_REVIEWS
+
+
+def test_connecting_spotify_shows_the_line_that_keeps_the_login(client, monkeypatch):
+    from app.api import playlists as api
+    from app.integrations import spotify
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "")
+    spotify._session.clear()
+    monkeypatch.setattr(spotify, "_request_token", lambda *a: {"access_token": "A", "refresh_token": "tok<1>"})
+    location = client.get("/api/spotify/login", follow_redirects=False).headers["location"]
+    state = location.split("state=")[1].split("&")[0]
+    page = client.get("/api/spotify/callback", params={"state": state, "code": "c"})
+    assert page.status_code == 200 and "export SPOTIFY_REFRESH_TOKEN=tok&lt;1&gt;" in page.text   # escaped
+    status = client.get("/api/spotify/status").json()
+    assert status["logged_in"] is True and status["permanent"] is False   # until a restart
+    spotify._session.clear()
+    api._login_states.clear()

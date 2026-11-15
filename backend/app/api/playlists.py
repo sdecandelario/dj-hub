@@ -86,7 +86,8 @@ def mark(spotify_id: str, body: MarkBody, session=Depends(get_session, scope="fu
 @router.get("/spotify/status")
 def spotify_status():
     client_id, client_secret = spotify.app_keys()
-    return {"keys": bool(client_id and client_secret), "logged_in": spotify.has_saved_login(),
+    return {"keys": bool(client_id and client_secret), "logged_in": spotify.has_login(),
+            "permanent": spotify.has_permanent_login(),
             "redirect_uri": spotify.APP_REDIRECT_URI}
 
 
@@ -110,8 +111,16 @@ def spotify_callback(state: str = "", code: str | None = None, error: str | None
     if not code:
         return HTMLResponse(f"<p>Spotify login failed ({html.escape(str(error))}). You can close this tab.</p>", status_code=400)
     try:
-        spotify.exchange_code(code, spotify.APP_REDIRECT_URI)
+        keep = spotify.exchange_code(code, spotify.APP_REDIRECT_URI)
     except (spotify.SpotifyLoginError, OSError, ValueError, KeyError) as exc:
         return HTMLResponse(f"<p>Spotify login failed ({type(exc).__name__}). You can close this tab.</p>",
                             status_code=400)
-    return RedirectResponse(get_config().frontend_url.rstrip("/") + "/settings?spotify=connected")
+    back = get_config().frontend_url.rstrip("/") + "/settings?spotify=connected"
+    # The login is only held in memory; the line below keeps it across restarts. It is shown here, in the
+    # browser of the person who just logged in, and never written to a file or a log.
+    return HTMLResponse(
+        "<h1>Spotify is connected</h1>"
+        "<p>It works until the app restarts. To keep it, add this line to <code>~/.zshrc</code> "
+        "and restart the app:</p>"
+        f"<pre>{html.escape(keep)}</pre>"
+        f'<p><a href="{html.escape(back)}">Back to Settings</a></p>')

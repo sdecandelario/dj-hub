@@ -26,8 +26,8 @@ make start              # http://127.0.0.1:8000
 Without keys, the public embed page is read (first 100 tracks per playlist). For full playlists:
 
 1. In your app at https://developer.spotify.com/dashboard add the redirect URI `http://127.0.0.1:8000/api/spotify/callback`.
-2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zprofile`).
-3. Settings → **Connect Spotify**. The login is saved in `~/.local/share/dj-hub/spotify_token.json`, next to the database.
+2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zshrc`).
+3. Settings → **Connect Spotify**. The page that follows shows one line, `export SPOTIFY_REFRESH_TOKEN=...`. Add it to `~/.zshrc` and restart the app to keep the login. Without it the login lasts until the app restarts.
 
 ## Last.fm
 
@@ -62,7 +62,7 @@ Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`
 | `DJ_TRACKS_ROOT` | `~/Documents/DJ Tracks` |
 | `DJ_TRASH` | `~/.Trash` |
 | `DJ_SOURCES` | Nicotine downloads and `~/Downloads` (or set them in Settings) |
-| `DJ_HUB_DB` | `~/.local/share/dj-hub/dj-hub.db` |
+| `DJ_HUB_DB` | `data/dj-hub.db` in the project (git-ignored) |
 | `DJ_HUB_FRONTEND` | Where the app sends you after the Spotify login (set by `make dev` to the Vite server) |
 
 ## Development

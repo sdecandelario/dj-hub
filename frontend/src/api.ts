@@ -299,7 +299,7 @@ export type Settings = {
   missing_tools: string[]
 }
 
-export type SpotifyStatus = { keys: boolean; logged_in: boolean; redirect_uri: string }
+export type SpotifyStatus = { keys: boolean; logged_in: boolean; permanent: boolean; redirect_uri: string }
 
 export type Summary = {
   library_files: number

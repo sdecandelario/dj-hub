@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 from app import config, db
+from app.integrations import spotify
 
 
 @pytest.fixture
@@ -18,6 +19,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("DJ_SOURCES", str(downloads))
     monkeypatch.setenv("DJ_HUB_DB", str(tmp_path / "test.db"))
     monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
+    monkeypatch.delenv("SPOTIFY_REFRESH_TOKEN", raising=False)
+    spotify._session.clear()
     config.reload_config()
     db.reset_engine()
     db.migrate()
