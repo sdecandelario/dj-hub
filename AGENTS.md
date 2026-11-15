@@ -12,6 +12,7 @@ Audio analysis is read-only. Never modify music files, tags, or the Rekordbox li
 - Tests use temporary folders and databases (`backend/tests/conftest.py`); never point tests at the real library.
 - Ask before running anything that applies a batch (`djhub ... --apply`, `POST /api/batches/{id}/apply`) on the real library.
 - Ask before refreshing Spotify playlists: it calls Spotify and rewrites the stored playlists.
+- `djhub discover` is read-only but calls Last.fm (`LASTFM_API_KEY` env var, never print it). Candidates come from Last.fm data; only the fit review against the projects below is done by Claude.
 - Never read or print `~/.zprofile` or `~/.config/dj_playlist_checker/spotify_token.json`. They hold the Spotify keys and login.
 - The database is `~/.local/share/dj-hub/dj-hub.db` (override with `DJ_HUB_DB`). Schema changes need an Alembic migration: `make migration m="..."`.
 - Layout: `backend/app/core` is pure logic (ported from the old scripts, keep it free of database and web code); `services` are the use cases; `api` the HTTP routes; `cli.py` the `djhub` command used by the dj-library skill. `frontend/src/pages` has one file per page.

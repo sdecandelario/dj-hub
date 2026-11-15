@@ -176,3 +176,21 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String, primary_key=True)
     value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON, nullable=True)
+
+
+class Candidate(Base):
+    """A song suggested by discovery. Status new | wanted | dismissed; dismissed never come back."""
+    __tablename__ = "candidates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String, unique=True, index=True)   # normalized "artist|title"
+    genre: Mapped[str] = mapped_column(String, default="", index=True)  # folder it was found for
+    artist: Mapped[str] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="new", index=True)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    because: Mapped[list] = mapped_column(JSON, default=list)           # seed artists that point to it
+    you_own: Mapped[int] = mapped_column(Integer, default=0)            # tracks by this artist already owned
+    check: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # a similar track you may own
+    source: Mapped[str] = mapped_column(String, default="lastfm")
+    created_at: Mapped[dt.datetime] = mapped_column(default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=now)

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .api import analysis, downloads, jobs, library, playlists, settings
+from .api import analysis, discovery, downloads, jobs, library, playlists, settings
 from .jobs import runner
 from .services import analysis as _a, downloads as _d, library as _l, playlists as _p  # noqa: F401 (job handlers)
 
@@ -26,7 +26,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="DJ Hub", lifespan=lifespan)
-for module in (library, jobs, analysis, downloads, playlists, settings):
+for module in (library, jobs, analysis, downloads, playlists, discovery, settings):
     app.include_router(module.router, prefix="/api")
 
 
