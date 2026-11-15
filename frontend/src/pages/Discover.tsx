@@ -75,7 +75,11 @@ export default function Discover() {
         <button onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
       </div>
       <div className="panel flush table-wrap">
-        <table>
+        <table className="fixed">
+          <colgroup>
+            <col style={{ width: '16%' }} /><col style={{ width: '24%' }} /><col style={{ width: '26%' }} />
+            <col /><col style={{ width: 170 }} />
+          </colgroup>
           <thead>
             <tr><th>Artist</th><th>Title</th><th>Because you have</th><th>Notes</th><th className="actions">Decision</th></tr>
           </thead>

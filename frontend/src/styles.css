@@ -105,7 +105,9 @@ button.ok:hover:not(:disabled) { border-color: var(--ok); background: var(--ok-s
 button.danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
 button.ok.on { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 600; }
 button.danger.on { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); font-weight: 600; }
-td.actions { width: 1%; white-space: nowrap; }
+table.fixed { table-layout: fixed; }
+table.fixed td .badge { white-space: normal; }
+td.actions { white-space: nowrap; }
 td.actions .row { flex-wrap: nowrap; }
 button.small { padding: 3px 8px; font-size: 12px; }
 button.ghost { border-color: transparent; background: transparent; }
