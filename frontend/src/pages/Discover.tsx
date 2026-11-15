@@ -25,7 +25,8 @@ export default function Discover() {
 
   const selected = genre || genres.data?.[0] || ''
 
-  const all = useMemo(() => list.data ?? [], [list.data])
+  const everything = useMemo(() => list.data ?? [], [list.data])
+  const all = useMemo(() => everything.filter(c => c.genre === selected), [everything, selected])
   const q = search.toLowerCase()
   const counts = useMemo(() => ({
     new: all.filter(c => c.status === 'new').length,
@@ -46,22 +47,26 @@ export default function Discover() {
             own are never listed. Nothing here changes your files.
           </p>
         </div>
-        <div className="row">
-          <select value={selected} onChange={e => setGenre(e.target.value)} aria-label="Genre folder">
-            {genres.data?.map(g => <option key={g}>{g}</option>)}
-          </select>
-          <button className="primary" disabled={!selected || running || run.isPending} onClick={() => run.mutate(selected)}>
-            {running ? 'Searching…' : 'Find new songs'}
-          </button>
-        </div>
       </div>
       <ErrorNote error={list.error || genres.error || run.error} />
-      <div className="cards">
-        {(['new', 'wanted', 'dismissed'] as Status[]).map(s => (
-          <Card key={s} label={LABEL[s]} value={counts[s]} selected={status === s} onClick={() => setStatus(s)}
-            hint={{ new: 'Waiting for your decision', wanted: 'Download these in Nicotine',
-              dismissed: 'Never suggested again' }[s]} />
+      <div className="tabs">
+        {genres.data?.map(g => (
+          <button key={g} className={g === selected ? 'active' : ''} onClick={() => setGenre(g)}>
+            {g} <small>{everything.filter(c => c.genre === g && c.status === 'new').length}</small>
+          </button>
         ))}
+      </div>
+      <div className="page-head">
+        <div className="cards" style={{ marginBottom: 0, gridTemplateColumns: 'repeat(3, 250px)' }}>
+          {(['new', 'wanted', 'dismissed'] as Status[]).map(s => (
+            <Card key={s} label={LABEL[s]} value={counts[s]} selected={status === s} onClick={() => setStatus(s)}
+              hint={{ new: 'Waiting for your decision', wanted: 'Download these in Nicotine',
+                dismissed: 'Never suggested again' }[s]} />
+          ))}
+        </div>
+        <button className="primary" disabled={!selected || running || run.isPending} onClick={() => run.mutate(selected)}>
+          {running ? 'Searching…' : `Find new songs in ${selected}`}
+        </button>
       </div>
       <ListToolbar search={search} onSearch={setSearch} placeholder="Search artist or title" empty={!rows.length}
         copyText={() => rows.map(c => `${c.artist} - ${c.title}`).join('\n')} csvName={`discover-${status}.csv`}
@@ -123,7 +128,7 @@ export default function Discover() {
         </table>
         {!rows.length && list.data && (
           <Empty>
-            {all.length ? 'Nothing here.' : 'No suggestions yet. Pick a genre folder and press Find new songs.'}
+            {all.length ? 'Nothing here.' : 'No suggestions yet for this genre folder. Press Find new songs.'}
           </Empty>
         )}
       </div>
