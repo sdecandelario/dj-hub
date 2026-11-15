@@ -283,3 +283,34 @@ def test_a_move_keeps_the_file_row_and_its_loudness_shows_in_the_table(client, e
     library.apply(session_scope, undo)
     with session_scope() as s:
         assert s.get(File, file_id).path == str(song) and s.query(File).count() == 1   # and back again
+
+
+def test_dropping_a_column_keeps_the_rows_that_point_at_the_table(tmp_path):
+    """SQLite rebuilds the table to drop a column; with foreign keys on that would wipe or clear the
+    rows of tables that refer to it (file ops of a batch, the job of a review)."""
+    from pathlib import Path
+
+    import sqlalchemy as sa
+    from alembic import command
+    from alembic.config import Config
+
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    sa.event.listen(engine, "connect", lambda c, _: c.execute("PRAGMA foreign_keys=ON"))
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).parents[1] / "app" / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    cfg.attributes["connection_engine"] = engine
+    command.upgrade(cfg, "9d2e3f5a7b8c")   # before the two columns were dropped
+    with engine.begin() as c:
+        c.execute(sa.text("INSERT INTO jobs (id, type, params, status, done, total, message, log, summary, created_at)"
+                          " VALUES (1, 'review_downloads', '{}', 'done', 0, 0, '', '', '{}', '2026-11-01')"))
+        c.execute(sa.text("INSERT INTO reviews (id, job_id, created_at, payload) VALUES (1, 1, '2026-11-01', '{}')"))
+        c.execute(sa.text("INSERT INTO batches (id, kind, status, label, request, plan, error, created_at, legacy_id)"
+                          " VALUES (1, 'legacy', 'applied', 'old', '{}', '{}', '', '2026-11-01', 'x')"))
+        c.execute(sa.text("INSERT INTO file_ops (batch_id, seq, action, label, source, dest) VALUES (1, 1, 'move', '', 'a', 'b')"))
+    command.upgrade(cfg, "head")
+    with engine.connect() as c:
+        assert c.execute(sa.text("SELECT count(*) FROM file_ops")).scalar() == 1
+        assert c.execute(sa.text("SELECT job_id FROM reviews")).scalar() == 1
+        assert c.execute(sa.text("SELECT kind FROM batches")).scalar() == "apply"
+        assert "legacy_id" not in [r[1] for r in c.execute(sa.text("PRAGMA table_info(batches)"))]

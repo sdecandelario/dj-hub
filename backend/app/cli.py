@@ -1,7 +1,6 @@
 """djhub: the DJ Hub command line (used by the dj-library Claude skill).
 
-Same commands as the old djlib.py. Every change is a dry run unless --apply is
-given; applied changes are stored as batches in the app database (visible in
+Every change is a dry run unless --apply is given; applied changes are stored as batches in the app database (visible in
 History) and can be reverted with `undo`.
 
     uv run --project ~/Projects/dj-hub/backend djhub status
@@ -150,7 +149,6 @@ def cmd_undo(args):
     with session_scope() as s:
         if args.batch:
             batch = s.get(Batch, int(args.batch)) if args.batch.isdigit() else None
-            batch = batch or s.scalar(select(Batch).where(Batch.legacy_id == args.batch))
         else:
             batch = s.scalar(select(Batch).where(Batch.status.in_(("applied", "partial")), Batch.kind != "undo")
                              .order_by(Batch.id.desc()).limit(1))

@@ -100,7 +100,7 @@ def make_plan(session, kind, payload, when=None, tracks=None):
         if target.kind == "undo":
             raise BatchError("An undo cannot be undone; plan the change again instead")
         ops = session.scalars(select(FileOp).where(FileOp.batch_id == target.id).order_by(FileOp.seq)).all()
-        return lib.plan_undo(cfg.root, cfg.trash, target.legacy_id or str(target.id),
+        return lib.plan_undo(cfg.root, cfg.trash, str(target.id),
                              [{"action": o.action, "source": o.source, "dest": o.dest,
                                "trash": o.label == "trash", "tags_before": o.tags_before} for o in ops])
     tracks = scan(session) if tracks is None else tracks
@@ -285,7 +285,7 @@ def batch_dict(session, batch, with_ops=False):
     out = {
         "id": batch.id, "kind": batch.kind, "status": batch.status, "label": batch.label,
         "created_at": batch.created_at, "applied_at": batch.applied_at, "error": batch.error,
-        "undoes_id": batch.undoes_id, "legacy_id": batch.legacy_id,
+        "undoes_id": batch.undoes_id,
         "plan": batch.plan, "root": str(get_config().root),
         "can_undo": batch.status in ("applied", "partial") and batch.kind != "undo",
     }

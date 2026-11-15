@@ -69,7 +69,7 @@ Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`
 
 ```sh
 make test               # backend tests (temporary folders, real ffmpeg) + frontend type check and build
-make lint               # ruff (backend) and oxlint (frontend)
+make lint               # ruff (backend), oxlint and knip (frontend: unused files, exports, dependencies)
 make migration m="..."  # after changing backend/app/models.py
 ```
 

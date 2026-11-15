@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
 import { api, type Batch, type Job } from '../api'
 import { useBatch } from '../components/batchContext'
-import { Badge, ErrorNote, StatusBadge } from '../components/ui'
+import { ErrorNote, StatusBadge } from '../components/ui'
 import { clickableRow, JOB_LABELS, when } from '../components/format'
 import { attempt } from '../components/errorBus'
 
@@ -70,7 +70,7 @@ export default function History() {
                 <Fragment key={b.id}>
                   <tr {...clickableRow(() => setOpen(open === b.id ? null : b.id))}>
                     <td>{b.id}</td>
-                    <td>{b.label}{b.legacy_id && <> <Badge>dj-library skill</Badge></>}
+                    <td>{b.label}
                       {b.error && <><br /><small className="muted">{b.error}</small></>}</td>
                     <td><StatusBadge status={b.status} /></td>
                     <td><small>{when(b.applied_at ?? b.created_at)}</small></td>

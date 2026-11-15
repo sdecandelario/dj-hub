@@ -3,7 +3,7 @@ import type { Measurement } from './api'
 // One verdict per track: fix (replace or find another version), check (listen or set the gain), ok.
 // Thresholds follow the downloads review (transcode gap, decode errors) so both pages agree.
 export type Level = 'fix' | 'check' | 'ok'
-export type Finding = { level: Level | 'info'; text: string; action: string }
+type Finding = { level: Level | 'info'; text: string; action: string }
 export type Verdict = {
   level: Level
   headline: string        // the main reason, short
@@ -18,7 +18,7 @@ export type Context = {
   libraryAir: number | null    // median top-end level of the view
 }
 
-export const PEAK_CEILING = -1      // dBTP: headroom target when raising gain
+const PEAK_CEILING = -1      // dBTP: headroom target when raising gain
 const TRANSCODE_GAP_DB = 85
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)

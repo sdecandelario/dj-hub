@@ -55,7 +55,7 @@ Choose by artist and track, using your music knowledge, the `genre_tag` (often g
 | `intake-decided [--apply]` | Same, for the songs the user decided on the app's Downloads page |
 | `review` | Measure and group the downloads (read-only); results show on the Downloads page |
 | `history` | Recent batches with their IDs |
-| `undo [--batch ID] [--apply]` | Revert the last applied change, or a given batch (number, or an old djlib batch name) |
+| `undo [--batch ID] [--apply]` | Revert the last applied change, or a given batch (its number from `history`) |
 | `dupes` | Same file under two names, and same artist+title in different files |
 | `analyze PATH...` | Loudness analysis of files or folders (read-only); results show on the Analysis page |
 | `refresh-playlists` | Read the Spotify playlists and match them against the library (calls Spotify: ask first) |

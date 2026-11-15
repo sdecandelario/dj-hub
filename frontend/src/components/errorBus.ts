@@ -1,7 +1,7 @@
 // One place for errors nobody is waiting on (a failed click, a background action): they appear as a
 // dismissible banner instead of being lost as unhandled promise rejections.
 
-export type Entry = { id: number; message: string }
+type Entry = { id: number; message: string }
 let entries: Entry[] = []
 export const getErrors = () => entries
 let nextId = 1

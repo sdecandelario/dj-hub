@@ -81,14 +81,13 @@ class Batch(Base):
     """A planned or applied set of file changes. Applied batches can be undone."""
     __tablename__ = "batches"
     id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[str] = mapped_column(String)                        # apply | remove | intake | undo
+    kind: Mapped[str] = mapped_column(String)                        # apply | remove | intake | undo | tags | rename
     status: Mapped[str] = mapped_column(String, default="preview")   # preview|applied|partial|undone|discarded|failed
     label: Mapped[str] = mapped_column(String, default="")
     request: Mapped[dict] = mapped_column(JSON, default=dict)
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
     undoes_id: Mapped[int | None] = mapped_column(ForeignKey("batches.id"), nullable=True)
-    legacy_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     applied_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
 

@@ -1,6 +1,6 @@
 // Typed access to the DJ Hub API (/api). Shapes mirror backend/app/api/*.py.
 
-export class ApiError extends Error {
+class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
     super(message)
@@ -64,14 +64,13 @@ export type Step = { action: 'copy' | 'move' | 'skip'; source: string; dest: str
 
 export type Batch = {
   id: number
-  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'legacy' | 'tags' | 'rename'
+  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'tags' | 'rename'
   status: 'preview' | 'running' | 'applied' | 'partial' | 'undone' | 'discarded' | 'failed'
   label: string
   created_at: string
   applied_at: string | null
   error: string
   undoes_id: number | null
-  legacy_id: string | null
   root: string
   can_undo: boolean
   plan: { kind: string; steps: Step[]; problems: string[]; notes: string[] }
@@ -81,7 +80,7 @@ export type Batch = {
 
 export type ApplyResult = { id: number; status: string; error: string; done: number; kind: string; warnings?: string[] }
 
-export type Loudness = {
+type Loudness = {
   path: string
   status: string
   integrated_lufs: number | null
@@ -153,7 +152,7 @@ export type Tree = {
   sessions: string[]
 }
 
-export type Run = {
+type Run = {
   id: number
   label: string
   scope: 'file' | 'folder' | 'selection' | 'test'

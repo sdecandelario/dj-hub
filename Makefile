@@ -32,6 +32,7 @@ test:
 lint:
 	uv run --directory backend ruff check .
 	npm --prefix frontend run lint
+	npm --prefix frontend run knip
 
 # After changing backend/app/models.py: make migration m="what changed"
 migration:
