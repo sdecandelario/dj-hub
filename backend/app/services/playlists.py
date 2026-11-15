@@ -116,16 +116,14 @@ def match_all(session):
     tracks = _unique_tracks(session)
     old = {m.spotify_id: m for m in session.scalars(select(Match)).all()}
     counts = {"have": 0, "maybe": 0, "missing": 0}
-    stamp = now()
     for spotify_id, track in tracks.items():
-        result = matching.match_track(track, library, index)
+        result = matching.match_track(track, index)
         row = old.pop(spotify_id, None) or Match(spotify_id=spotify_id)
         session.add(row)
         match = result["match"] or {}
         row.status, row.path, row.relative_path = result["status"], match.get("path"), match.get("relative_path")
         row.matched_title, row.matched_artist, row.note = match.get("title", ""), match.get("artist", ""), \
             match.get("note", "")
-        row.computed_at = stamp
         counts[result["status"]] += 1
     for row in old.values():
         session.delete(row)
@@ -143,7 +141,7 @@ def link_downloads(session, tracks=None):
         row.download_song_key, row.download_status = None, ""
         if row.status == "have" or not entries or row.spotify_id not in tracks:
             continue
-        result = matching.match_track(tracks[row.spotify_id], entries, index)
+        result = matching.match_track(tracks[row.spotify_id], index)
         if result["status"] != "missing":
             entry = next(e for e in entries if e["path"] == result["match"]["path"])
             row.download_song_key, row.download_status = entry["song_key"], result["status"]

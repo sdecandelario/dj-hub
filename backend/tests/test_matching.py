@@ -1,6 +1,7 @@
 import unittest
 
 from app.core import matching as c
+from app.core.names import guess_from_filename
 from app.integrations.spotify import parse_playlist_id
 
 
@@ -15,7 +16,7 @@ def spotify(artists, title):
 
 class MatchingTest(unittest.TestCase):
     def match(self, track, library):
-        return c.match_track(track, library, c.build_index(library))["status"]
+        return c.match_track(track, c.build_index(library))["status"]
 
     def test_exact_match(self):
         self.assertEqual(self.match(spotify(["Soft Cell"], "Tainted Love"), [local("Soft Cell", "Tainted Love")]), "have")
@@ -55,9 +56,9 @@ class MatchingTest(unittest.TestCase):
         self.assertEqual(self.match(spotify(["a-ha"], "Take on Me"), [local("Devo", "Whip It")]), "missing")
 
     def test_filename_parsing(self):
-        self.assertEqual(c.parse_filename("60 - Technotronic - Pump Up The Jam"),
+        self.assertEqual(guess_from_filename("60 - Technotronic - Pump Up The Jam"),
                          {"artist": "Technotronic", "title": "Pump Up The Jam"})
-        self.assertEqual(c.parse_filename("07 Another World"), {"title": "Another World"})
+        self.assertEqual(guess_from_filename("07 Another World"), {"title": "Another World"})
 
     def test_playlist_id_parsing(self):
         pid = "37i9dQZF1DX4UtSsGT1Sbe"
@@ -69,16 +70,3 @@ class MatchingTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
-
-def test_artist_prefilter_gives_the_same_matches_as_a_full_scan():
-    from app.core import matching
-
-    names = [("Soft Cell", "Tainted Love"), ("Depeche Mode", "Personal Jesus"), ("", "Untitled Groove"),
-             ("Boy Harsher", "Pain"), ("The Cure", "A Forest"), ("Cold Cave", "Love Comes Close")]
-    library = [local(a, t) for a, t in names]
-    index = matching.build_index(library)
-    plain = dict(index)   # no artist index: every local track is scanned
-    for artist, title in [("Soft Cell", "Tainted Lov"), ("Depeche Mode", "Personal Jesu"), ("Boy Harsher", "Pains"),
-                          ("Cure", "A Forrest"), ("Someone", "Untitled Grove"), ("Cold Cave", "Love Comes Closer")]:
-        track = spotify([artist], title)
-        assert matching.match_track(track, library, index) == matching.match_track(track, library, plain)

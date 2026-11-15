@@ -28,18 +28,13 @@ def normalize(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def parse_filename(stem):
-    """Guess artist/title from names like '01 - Artist - Title' or 'Artist - Title'."""
-    return guess_from_filename(stem)
-
-
 def local_entry(path, relative_path, artist=None, title=None):
     """A local file in the shape the matcher expects. Tags are read when not given."""
     if artist is None or title is None:
         tags = read_tags(path) if Path(path).suffix.lower() == ".mp3" else {}
     else:
         tags = {"artist": artist, "title": title}
-    from_name = parse_filename(Path(path).stem)
+    from_name = guess_from_filename(Path(path).stem)
     return {
         "path": str(path), "relative_path": relative_path,
         "title": tags.get("title") or from_name.get("title", ""),
@@ -105,17 +100,15 @@ def build_index(library):
     return index
 
 
-def _similar_candidates(wanted_artists, library, index):
+def _similar_candidates(wanted_artists, index):
     """Local tracks that could pass `artists_agree`, in library order: those sharing an artist word, and
-    those with no artist info (checked against the path). Falls back to everything for a plain dict index."""
-    if not isinstance(index, Index):
-        return library
+    those with no artist info (checked against the path)."""
     found = {id(t): t for word in wanted_artists for t in index.by_artist.get(word, [])}
     found.update({id(t): t for t in index.no_artist})
     return sorted(found.values(), key=lambda t: t["_pos"])
 
 
-def match_track(spotify_track, library, index):
+def match_track(spotify_track, index):
     core, descriptor = split_title(spotify_track["title"])
     version = distinct_version(descriptor)
     each_artist = [artist_tokens(a) for a in spotify_track["artists"]]
@@ -145,7 +138,7 @@ def match_track(spotify_track, library, index):
                 best_note = "Same title, different artist and version"
 
     if best_score < 1.0 and core and len(core) >= 3:
-        for local in _similar_candidates(wanted_artists, library, index):
+        for local in _similar_candidates(wanted_artists, index):
             for local_core in local["_cores"]:
                 if local_core == core:
                     continue

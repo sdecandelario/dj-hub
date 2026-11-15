@@ -70,7 +70,7 @@ def _store_downloads(session, items):
     seen = set()
     for item in items:
         row = library.register_file(session, item["path"], "download")
-        row.area, row.present, row.last_seen = "download", True, now()
+        row.area, row.present = "download", True
         row.size, row.mtime_ns, row.sha256 = item["size"], item["mtime_ns"], item["sha256"]
         row.artist, row.title = item.get("tag_artist") or "", item.get("tag_title") or ""
         item["file_id"] = row.id

@@ -32,7 +32,6 @@ class File(Base):
     bpm: Mapped[str] = mapped_column(String, default="")
     present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     first_seen: Mapped[dt.datetime] = mapped_column(default=now)
-    last_seen: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 class Job(Base):
@@ -161,14 +160,12 @@ class Match(Base):
     note: Mapped[str] = mapped_column(String, default="")
     download_song_key: Mapped[str | None] = mapped_column(String, nullable=True)   # a waiting download
     download_status: Mapped[str] = mapped_column(String, default="")              # have | maybe
-    computed_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 class Mark(Base):
-    """'Downloaded' tick on a Spotify track (replaces the old browser storage)."""
+    """'Downloaded' tick on a Spotify track."""
     __tablename__ = "marks"
     spotify_id: Mapped[str] = mapped_column(String, primary_key=True)
-    marked_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 class Setting(Base):
@@ -192,7 +189,6 @@ class Candidate(Base):
     check: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # a similar track you may own
     source: Mapped[str] = mapped_column(String, default="lastfm")
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
-    updated_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 class LastfmCache(Base):

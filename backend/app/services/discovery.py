@@ -135,8 +135,7 @@ def save(session, result):
         if row is None:
             row = Candidate(key=key, genre=result["genre"], artist=c["artist"], title=c["title"])
             session.add(row)
-        row.score, row.because, row.you_own, row.check, row.updated_at = \
-            c["score"], c["because"], c["you_own"], c["check"], now()
+        row.score, row.because, row.you_own, row.check = c["score"], c["because"], c["you_own"], c["check"]
         rows.append(row)
     session.flush()
     return rows
@@ -151,7 +150,7 @@ def set_status(session, ids, status):
     if missing:
         raise KeyError(f"Candidate(s) not found: {', '.join(map(str, sorted(missing)))}")
     for row in rows:
-        row.status, row.updated_at = status, now()
+        row.status = status
     return rows
 
 

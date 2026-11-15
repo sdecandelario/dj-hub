@@ -61,7 +61,7 @@ def sync_library(session, tracks=None):
         row.kind, row.folder, row.rel_path = t["kind"], t["folder"], t["path"]
         row.size, row.mtime_ns, row.quick_fp = t["size"], t["mtime_ns"], t["fp"]
         row.artist, row.title, row.genre_tag, row.bpm = t["artist"], t["title"], t["genre_tag"], t["bpm"]
-        row.present, row.last_seen = True, stamp
+        row.present = True
         seen.add(t["abs"])
     gone = 0
     for path, row in existing.items():

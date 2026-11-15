@@ -102,7 +102,7 @@ def candidate_tracks(artists, top_tracks, library, dismissed=()):
             key = (matching.normalize(entry["artist"]), matching.normalize(title))
             if key in dismissed:
                 continue
-            result = matching.match_track({"title": title, "artists": [entry["artist"]]}, library, index)
+            result = matching.match_track({"title": title, "artists": [entry["artist"]]}, index)
             if result["status"] == "have" or _same_song_other_spelling(result, entry["artist"]):
                 continue
             out.append({

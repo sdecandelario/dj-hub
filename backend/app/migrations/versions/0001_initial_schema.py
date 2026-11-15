@@ -43,7 +43,6 @@ def upgrade():
     sa.Column('check', sa.JSON(), nullable=True),
     sa.Column('source', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('candidates', schema=None) as batch_op:
@@ -68,7 +67,6 @@ def upgrade():
     sa.Column('bpm', sa.String(), nullable=False),
     sa.Column('present', sa.Boolean(), nullable=False),
     sa.Column('first_seen', sa.DateTime(), nullable=False),
-    sa.Column('last_seen', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('files', schema=None) as batch_op:
@@ -108,7 +106,6 @@ def upgrade():
 
     op.create_table('marks',
     sa.Column('spotify_id', sa.String(), nullable=False),
-    sa.Column('marked_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('spotify_id')
     )
     op.create_table('matches',
@@ -121,7 +118,6 @@ def upgrade():
     sa.Column('note', sa.String(), nullable=False),
     sa.Column('download_song_key', sa.String(), nullable=True),
     sa.Column('download_status', sa.String(), nullable=False),
-    sa.Column('computed_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('spotify_id')
     )
     op.create_table('playlists',
