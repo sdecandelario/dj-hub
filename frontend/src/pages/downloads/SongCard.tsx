@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { LibraryVerdict, LibraryVersion, Song, Version } from '../../api'
 import { PlayButton } from '../../components/PlayButton'
-import type { Player } from '../../components/player'
-import { Badge, duration, num, plural, signed } from '../../components/ui'
+import type { Player } from '../../components/usePlayer'
+import { Badge } from '../../components/ui'
+import { duration, num, plural, signed } from '../../components/format'
 
 const VERDICT: Record<LibraryVerdict['verdict'], { label: string; tone: string }> = {
   better: { label: 'Better than library', tone: 'ok' },

@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type Job } from '../api'
-import { attempt } from './errors'
-import { JOB_LABELS, StatusBadge } from './ui'
+import { attempt } from './errorBus'
+import { JOB_LABELS } from './format'
+import { JobsContext, useActiveJobs } from './jobsContext'
+import { StatusBadge } from './ui'
 
 // Which cached queries to refresh when a job of this type finishes.
 const REFRESH: Record<string, string[]> = {
@@ -13,9 +15,6 @@ const REFRESH: Record<string, string[]> = {
   match_playlists: ['playlists', 'tracks', 'summary', 'downloads', 'file'],
   discover: ['candidates'],
 }
-
-const JobsContext = createContext<Job[]>([])
-export const useActiveJobs = () => useContext(JobsContext)
 
 /** Subscribes to /api/events and keeps the list of active jobs; refreshes data when jobs finish. */
 export function JobsProvider({ children }: { children: ReactNode }) {
@@ -96,10 +95,3 @@ export function JobBar() {
     </div>
   )
 }
-
-/** Start a job and return its id (undefined, with the error shown, when it could not start). */
-export const startJob = (type: Job['type'], params: Record<string, unknown> = {}) =>
-  attempt(api.post<{ id: number }>('/jobs', { type, params }))
-
-export const isRunning = (jobs: Job[], type: Job['type']) =>
-  jobs.some(j => j.type === type && (j.status === 'running' || j.status === 'queued'))

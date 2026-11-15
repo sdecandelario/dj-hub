@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type { LibraryFile, Tree } from '../../api'
-import { useBatch } from '../../components/batch'
-import { startJob, isRunning, useActiveJobs } from '../../components/jobs'
-import { plural } from '../../components/ui'
+import { useBatch } from '../../components/batchContext'
+import { startJob, isRunning, useActiveJobs } from '../../components/jobsContext'
+import { plural } from '../../components/format'
 import { GENRES, INBOX, SESSIONS } from './paths'
 
 // Moving to a genre or the Inbox changes where the song lives; a session holds extra copies.

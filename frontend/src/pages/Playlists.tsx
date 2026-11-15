@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlaylistInfo, type PlaylistTrack } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
-import { Badge, Card, downloadCsv, Empty, ErrorNote, StatusBadge, when } from '../components/ui'
+import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { Badge, Card, Empty, ErrorNote, StatusBadge } from '../components/ui'
+import { downloadCsv, when } from '../components/format'
 
 type Filter = 'missing' | 'maybe' | 'waiting' | 'downloaded' | 'have' | 'all'
 

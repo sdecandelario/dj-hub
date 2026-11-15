@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, type FileDetail, type Tree } from '../../api'
-import { useBatch } from '../../components/batch'
-import { attempt } from '../../components/errors'
+import { useBatch } from '../../components/batchContext'
+import { attempt } from '../../components/errorBus'
 import { HistoryChart } from '../../components/charts'
-import { startJob } from '../../components/jobs'
-import type { Player } from '../../components/player'
-import { ErrorNote, num, StatusBadge, when } from '../../components/ui'
+import { startJob } from '../../components/jobsContext'
+import type { Player } from '../../components/usePlayer'
+import { ErrorNote, StatusBadge } from '../../components/ui'
+import { num, when } from '../../components/format'
 import { GENRES, SESSIONS } from './paths'
 
 export function Detail({ id, tree, player, onClose }: { id: number; tree: Tree; player: Player; onClose: () => void }) {

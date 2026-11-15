@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AnalysisOverview, type Measurement } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
-import { Badge, Card, clickableRow, ErrorNote, num, signed, StatusBadge, when } from '../components/ui'
+import { Badge, Card, ErrorNote, StatusBadge } from '../components/ui'
+import { clickableRow, num, signed, when } from '../components/format'
 import { contextFor, isValid, judge, median, order, type Level, type Verdict } from '../verdict'
 
 type Row = Measurement & { delta: number | null; verdict: Verdict }

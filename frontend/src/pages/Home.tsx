@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type Settings, type Summary } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
-import { Card, ErrorNote, JOB_LABELS, StatusBadge, when } from '../components/ui'
+import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { Card, ErrorNote, StatusBadge } from '../components/ui'
+import { JOB_LABELS, when } from '../components/format'
 
 export default function Home() {
   const { data, error } = useQuery({ queryKey: ['summary'], queryFn: () => api.get<Summary>('/summary') })

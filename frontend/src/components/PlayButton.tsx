@@ -1,4 +1,4 @@
-import type { Player, Track } from './player'
+import type { Player, Track } from './usePlayer'
 
 /** The play / pause button used in every table. */
 export function PlayButton({ player, track }: { player: Player; track: Track }) {

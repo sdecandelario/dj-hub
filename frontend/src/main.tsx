@@ -3,7 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
-import { reportError } from './components/errors'
+import { reportError } from './components/errorBus'
 import './styles.css'
 
 const client = new QueryClient({

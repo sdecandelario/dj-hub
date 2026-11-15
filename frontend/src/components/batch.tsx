@@ -1,19 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type ApplyResult, type Batch, type Step } from '../api'
-import { basename, plural } from './ui'
+import { BatchContext } from './batchContext'
+import { basename, plural } from './format'
 
 // Every file change goes through this dialog: preview -> Apply -> result (with Undo).
-
-// `applied` counts applied batches, so pages can drop selections whose paths just changed.
-type Ctx = {
-  preview: (make: () => Promise<Batch>) => Promise<void>
-  /** Plan a change of this kind and open the dialog. */
-  plan: (kind: Batch['kind'], payload: object) => Promise<void>
-  applied: number
-}
-const BatchContext = createContext<Ctx>({ preview: async () => {}, plan: async () => {}, applied: 0 })
-export const useBatch = () => useContext(BatchContext)
 
 const relative = (root: string, path: string) => (path.startsWith(root + '/') ? path.slice(root.length + 1) : path)
 const parent = (path: string) => path.split('/').slice(0, -1).join('/')

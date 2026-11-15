@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { api, type Candidate } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
-import { Badge, Card, downloadCsv, Empty, ErrorNote } from '../components/ui'
+import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { Badge, Card, Empty, ErrorNote } from '../components/ui'
+import { downloadCsv } from '../components/format'
 
 type Status = Candidate['status']
 

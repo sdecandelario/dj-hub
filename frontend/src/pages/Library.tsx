@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type LibraryFile, type Tree } from '../api'
-import { useBatch } from '../components/batch'
-import { PlayerBar, usePlayer } from '../components/player'
-import { startJob } from '../components/jobs'
+import { useBatch } from '../components/batchContext'
+import { PlayerBar } from '../components/player'
+import { usePlayer } from '../components/usePlayer'
+import { startJob } from '../components/jobsContext'
 import { PlayButton } from '../components/PlayButton'
-import { Badge, clickableRow, Empty, ErrorNote, num, plural } from '../components/ui'
+import { Badge, Empty, ErrorNote } from '../components/ui'
+import { clickableRow, num, plural } from '../components/format'
 import { Detail } from './library/Detail'
 import { FolderTree } from './library/FolderTree'
 import { MoveBar } from './library/MoveBar'
@@ -34,14 +36,17 @@ export default function Library() {
   const [seenApplied, setSeenApplied] = useState(batch.applied)
   if (seenApplied !== batch.applied) { setSeenApplied(batch.applied); setChecked(new Map()) }
   // After a rename, move or undo, drop choices for paths no longer listed so they cannot come back later.
-  useEffect(() => {
-    if (!files.data || search) return
-    const listed = new Set(files.data.map(f => f.rel_path))
-    const keep = <T,>(o: Record<string, T>) => (Object.keys(o).every(k => listed.has(k)) ? o
-      : Object.fromEntries(Object.entries(o).filter(([k]) => listed.has(k))))
-    setEdits(keep)
-    setGenres(keep)
-  }, [files.data, search])
+  const [pruned, setPruned] = useState<{ data: unknown; search: string }>({ data: undefined, search })
+  if (pruned.data !== files.data || pruned.search !== search) {
+    setPruned({ data: files.data, search })
+    if (files.data && !search) {
+      const listed = new Set(files.data.map(f => f.rel_path))
+      const keep = <T,>(o: Record<string, T>) => (Object.keys(o).every(k => listed.has(k)) ? o
+        : Object.fromEntries(Object.entries(o).filter(([k]) => listed.has(k))))
+      setEdits(keep)
+      setGenres(keep)
+    }
+  }
   const pick = (k: string, f: string) => { setGenres({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)

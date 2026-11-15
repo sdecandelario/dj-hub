@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type PlaylistInfo, type Settings, type SpotifyStatus } from '../api'
-import { startJob } from '../components/jobs'
-import { Badge, ErrorNote, when } from '../components/ui'
-import { attempt } from '../components/errors'
+import { startJob } from '../components/jobsContext'
+import { Badge, ErrorNote } from '../components/ui'
+import { when } from '../components/format'
+import { attempt } from '../components/errorBus'
 
 const PROJECTS = ['Serge Candel', 'Juventudes Gilderianas', 'Perry Boys']
 
