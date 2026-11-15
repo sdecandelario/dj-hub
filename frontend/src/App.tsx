@@ -4,6 +4,7 @@ import { api, type Summary } from './api'
 import { BatchProvider } from './components/batch'
 import { JobBar, JobsProvider } from './components/jobs'
 import Analysis from './pages/Analysis'
+import Discover from './pages/Discover'
 import Downloads from './pages/Downloads'
 import History from './pages/History'
 import Home from './pages/Home'
@@ -16,6 +17,7 @@ function Nav() {
   const links: [string, string, number | undefined][] = [
     ['/', 'Home', undefined],
     ['/playlists', 'Playlists', data?.missing],
+    ['/discover', 'Discover', undefined],
     ['/downloads', 'Downloads', data?.review_pending],
     ['/library', 'Library', data?.inbox],
     ['/analysis', 'Analysis', undefined],
@@ -47,6 +49,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/playlists" element={<Playlists />} />
+              <Route path="/discover" element={<Discover />} />
               <Route path="/downloads" element={<Downloads />} />
               <Route path="/library" element={<Library />} />
               <Route path="/analysis" element={<Analysis />} />

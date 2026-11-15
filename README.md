@@ -1,9 +1,10 @@
 # DJ Hub
 
-One local app for the DJ library in `~/Documents/DJ Tracks`. It replaces `DJ_Playlist_Checker`, `DJ_Loudness_Analyzer` and the file logic of the dj-library skill (`djlib.py`).
+One local app for the DJ library in `~/Documents/DJ Tracks`. It replaces `DJ_Playlist_Checker`, `DJ_Loudness_Analyzer` and the file logic of the old dj-library script.
 
 - **Playlists**: which tracks of your Spotify playlists are missing, need a check (other version, similar title), or are already in the library. Each track shows its DJ project, and whether a matching download is waiting.
 - **Downloads**: measures new files in the Nicotine and `~/Downloads` folders, groups the versions of each song, flags transcodes, decode errors, other edits and compilations, and suggests the best one. You listen, pick, and move: the kept version goes to `00 Inbox`, the others to `00 Rejected/<song>`.
+- **Discover**: new songs for a genre folder. Last.fm finds artists similar to the ones you already have there, ranks them by how many of your artists point to them, and lists their top tracks you do not own. Mark each one Want or Dismiss (dismissed songs never come back). Songs already in one of your Spotify playlists are flagged. Nothing here changes your files.
 - **Library**: browse Inbox, Rejected, genres and sessions; select a song to play it, see its copies, playlists and loudness history; set its genre, add it to a session, send it to the Trash. Sort the whole Inbox in one go.
 - **Analysis**: loudness runs (LUFS, true peak, LRA), compared with a reference run. Start a run from the Library (selected songs, a folder or the whole library); the Analysis page shows the runs and results. Every run is kept.
 - **History**: every job and every file change. Applied changes can be undone.
@@ -30,6 +31,10 @@ Without keys, the public embed page is read (first 100 tracks per playlist). For
 2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zprofile`).
 3. Settings → **Connect Spotify**. The login is saved in `~/.config/dj_playlist_checker/spotify_token.json` (the same file the old checker used, so an existing login keeps working).
 
+## Last.fm
+
+Discover needs a free Last.fm API key (https://www.last.fm/api/account/create; the callback URL can stay empty). Export it as `LASTFM_API_KEY` in the shell that starts the app (for example in `~/.zshrc`). The key is never printed.
+
 ## Safety
 
 - Audio files, tags and Rekordbox are never modified. Measuring only reads.
@@ -41,7 +46,7 @@ Without keys, the public embed page is read (first 100 tracks per playlist). For
 
 ## Command line
 
-The dj-library Claude skill uses the same logic through `djhub`:
+The Claude skills in `.claude/skills/` (`dj-library`, `dj-discover`) use the same logic through `djhub`:
 
 ```sh
 uv run --project ~/Projects/dj-hub/backend djhub status
@@ -50,7 +55,7 @@ uv run --project ~/Projects/dj-hub/backend djhub apply plan.json --apply
 uv run --project ~/Projects/dj-hub/backend djhub undo --apply
 ```
 
-Other commands: `scan`, `find`, `remove`, `intake`, `intake-decided`, `dupes`, `index`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, `import-legacy`.
+Other commands: `scan`, `find`, `remove`, `intake`, `intake-decided`, `dupes`, `index`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, `import-legacy`, and for new music `discover`, `candidates`, `mark`.
 
 ## Configuration
 

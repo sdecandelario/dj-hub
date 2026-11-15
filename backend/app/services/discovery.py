@@ -3,6 +3,8 @@ from sqlalchemy import select
 
 from ..core import discovery, lastfm, matching
 from ..core.library import GENRES
+from ..db import session_scope
+from ..jobs import handler
 from ..models import Candidate, File, Playlist, PlaylistTrack, now
 from .playlists import _library_entries
 
@@ -150,3 +152,22 @@ def list_candidates(session, status=None, genre=None):
         "score": c.score, "because": c.because, "you_own": c.you_own, "check": c.check,
         "in_playlists": index.lookup(c.artist, c.title),
     } for c in session.scalars(query).all()]
+
+
+@handler("discover")
+def run_discover(ctx):
+    """params: {"genre": "<genre folder>"}. Asks Last.fm, stores the candidates (no files change)."""
+    genre = ctx.params.get("genre")
+    if not genre:
+        raise ValueError("Pick a genre folder")
+    ctx.progress(message=f"Reading the artists in {genre} and asking Last.fm (about 30 seconds)")
+    try:
+        with session_scope() as s:
+            result = discover(s, genre)
+            ctx.check()
+            rows = save(s, result)
+            new = sum(1 for r in rows if r.status == "new")
+    except (UnknownGenre, lastfm.LastfmError) as exc:
+        raise ValueError(str(exc))
+    return {"message": f"{len(rows)} candidate(s) for {genre}, {new} still new", "genre": genre,
+            "candidates": len(rows), "new": new}

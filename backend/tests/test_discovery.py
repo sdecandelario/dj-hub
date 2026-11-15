@@ -160,3 +160,28 @@ def test_candidates_api(client, env):
     assert [r["title"] for r in client.get("/api/candidates", params={"status": "wanted"}).json()] == ["Fresh"]
     assert client.put("/api/candidates/status", json={"ids": [rows[0]["id"]], "status": "x"}).status_code == 400
     assert client.put("/api/candidates/status", json={"ids": [999], "status": "wanted"}).status_code == 404
+
+
+def test_discover_job_stores_candidates_and_reports_errors(env, monkeypatch):
+    from app.core import lastfm
+    from app.jobs import runner
+    from app.models import Job
+    monkeypatch.setattr(lastfm, "_http_fetch", fake_fetch)
+    monkeypatch.setenv("LASTFM_API_KEY", "k")
+    with session_scope() as s:
+        _seed_library(s)
+    job_id = runner.run_sync("discover", {"genre": "EBM & Industrial"}, echo=None)
+    with session_scope() as s:
+        job = s.get(Job, job_id)
+        assert (job.status, job.summary["candidates"], job.summary["new"]) == ("done", 2, 2)
+        assert len(service.list_candidates(s)) == 2
+    bad = runner.run_sync("discover", {"genre": "Nope"}, echo=None)
+    with session_scope() as s:
+        job = s.get(Job, bad)
+        assert job.status == "failed" and "No songs in genre folder" in job.message
+
+
+def test_genres_endpoint_and_missing_genre(client, env):
+    with session_scope() as s:
+        _seed_library(s)
+    assert client.get("/api/candidates/genres").json() == ["EBM & Industrial"]

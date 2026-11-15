@@ -58,7 +58,7 @@ export function ErrorNote({ error }: { error: unknown }) {
 
 const STATUS_TONE: Record<string, string> = {
   done: 'ok', applied: 'ok', running: 'info', queued: 'info', preview: 'info', failed: 'danger', partial: 'warn',
-  interrupted: 'warn', cancelled: '', undone: '', discarded: '', have: 'ok', maybe: 'warn', missing: 'danger',
+  interrupted: 'warn', cancelled: '', undone: '', discarded: '', have: 'ok', maybe: 'warn', missing: 'danger', wanted: 'ok',
 }
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
@@ -71,6 +71,7 @@ export const JOB_LABELS: Record<string, string> = {
   spotify_refresh: 'Spotify refresh',
   library_scan: 'Library scan',
   match_playlists: 'Playlist matching',
+  discover: 'Finding new songs',
 }
 
 /** Download a CSV built from rows (first row = header). */

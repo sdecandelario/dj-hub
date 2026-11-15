@@ -13,6 +13,11 @@ class StatusBody(BaseModel):
     status: str
 
 
+@router.get("/candidates/genres")
+def genres(session=Depends(get_session)):
+    return discovery.genre_names(session)
+
+
 @router.get("/candidates")
 def candidates(status: str | None = None, genre: str | None = None, session=Depends(get_session)):
     return discovery.list_candidates(session, status=status, genre=genre)

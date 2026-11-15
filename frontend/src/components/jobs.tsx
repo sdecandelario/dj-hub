@@ -10,6 +10,7 @@ const REFRESH: Record<string, string[]> = {
   spotify_refresh: ['playlists', 'tracks', 'summary', 'downloads'],
   library_scan: ['files', 'tree', 'summary', 'playlists', 'tracks', 'file'],
   match_playlists: ['playlists', 'tracks', 'summary', 'downloads', 'file'],
+  discover: ['candidates'],
 }
 
 const JobsContext = createContext<Job[]>([])

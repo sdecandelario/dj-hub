@@ -41,7 +41,7 @@ export const audioUrl = (fileId: number) => `/api/files/${fileId}/audio`
 
 export type Job = {
   id: number
-  type: 'analyze' | 'review_downloads' | 'spotify_refresh' | 'library_scan' | 'match_playlists'
+  type: 'analyze' | 'review_downloads' | 'spotify_refresh' | 'library_scan' | 'match_playlists' | 'discover'
   params: Record<string, unknown>
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'
   done: number
@@ -270,6 +270,21 @@ export type PlaylistTrack = {
   downloaded: boolean
   playlists: string[]
   projects: string[]
+}
+
+export type Candidate = {
+  id: number
+  genre: string
+  artist: string
+  title: string
+  status: 'new' | 'wanted' | 'dismissed'
+  score: number
+  /** Artists in the genre folder that point to this one. */
+  because: string[]
+  /** Tracks by this artist (under any spelling) already in the library. */
+  you_own: number
+  check: { artist: string; title: string; relative_path: string; note: string } | null
+  in_playlists: { playlist: string; project: string }[]
 }
 
 export type Settings = {
