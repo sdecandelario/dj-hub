@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { api, type Candidate } from '../api'
 import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { ListToolbar } from '../components/ListToolbar'
 import { Badge, Card, Empty, ErrorNote } from '../components/ui'
-import { downloadCsv } from '../components/format'
 
 type Status = Candidate['status']
 
@@ -35,12 +35,6 @@ export default function Discover() {
   const rows = all.filter(c => c.status === status && `${c.artist} ${c.title}`.toLowerCase().includes(q))
   const running = isRunning(jobs, 'discover')
 
-  const copyList = () => navigator.clipboard.writeText(rows.map(c => `${c.artist} - ${c.title}`).join('\n'))
-  const exportCsv = () => downloadCsv(`discover-${status}.csv`, [
-    ['Artist', 'Title', 'Genre folder', 'Score', 'Because', 'Already in playlists'],
-    ...rows.map(c => [c.artist, c.title, c.genre, c.score, c.because.join('; '),
-      c.in_playlists.map(p => p.playlist).join('; ')]),
-  ])
 
   return (
     <>
@@ -69,12 +63,13 @@ export default function Discover() {
               dismissed: 'Never suggested again' }[s]} />
         ))}
       </div>
-      <div className="row" style={{ marginBottom: 10 }}>
-        <input className="search" placeholder="Search artist or title" value={search} onChange={e => setSearch(e.target.value)} />
-        <span className="spacer" />
-        <button onClick={copyList} disabled={!rows.length}>Copy list</button>
-        <button onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
-      </div>
+      <ListToolbar search={search} onSearch={setSearch} placeholder="Search artist or title" empty={!rows.length}
+        copyText={() => rows.map(c => `${c.artist} - ${c.title}`).join('\n')} csvName={`discover-${status}.csv`}
+        csvRows={() => [
+          ['Artist', 'Title', 'Genre folder', 'Score', 'Because', 'Already in playlists'],
+          ...rows.map(c => [c.artist, c.title, c.genre, c.score, c.because.join('; '),
+            c.in_playlists.map(p => p.playlist).join('; ')]),
+        ]} />
       <div className="panel flush table-wrap">
         <table className="fixed">
           <colgroup>

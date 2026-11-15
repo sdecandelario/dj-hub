@@ -22,11 +22,30 @@ function VerdictBadge({ v }: { v: LibraryVerdict }) {
 
 const isLossless = (codec: string) => ['flac', 'alac'].includes(codec) || codec.startsWith('pcm')
 
+type Measured = Pick<Version, 'duration_seconds' | 'codec' | 'bitrate_kbps' | 'integrated_lufs' | 'true_peak_dbtp'
+  | 'loudness_range_lu' | 'hf_gap_19k_db'>
+
+/** The measurement columns shared by a downloaded version and a library copy. */
+function StatCells({ v, median, hfTitle }: { v: Measured; median: number | null; hfTitle?: boolean }) {
+  const delta = median !== null && v.integrated_lufs !== null ? v.integrated_lufs - median : null
+  return (
+    <>
+      <td className="num">{duration(v.duration_seconds)}</td>
+      <td className="num">{isLossless(v.codec) ? <Badge tone="ok">{v.codec}</Badge> : `${v.bitrate_kbps ?? '—'} kbps`}</td>
+      <td className="num">{num(v.integrated_lufs)}<br /><small>{delta === null ? '' : `${signed(delta)} vs lib`}</small></td>
+      <td className="num">{num(v.true_peak_dbtp)}</td>
+      <td className="num">{num(v.loudness_range_lu)}</td>
+      <td className="num" title={hfTitle ? 'Level difference between the full signal and above 19.5 kHz. Lower means more detail.' : undefined}>
+        {num(v.hf_gap_19k_db, 0)}
+      </td>
+    </>
+  )
+}
+
 /** A library copy shown under the downloads, to compare and listen. */
 function LibraryRow({ song, v, median, player }: {
   song: Song; v: LibraryVersion; median: number | null; player: Player
 }) {
-  const delta = median !== null && v.integrated_lufs !== null ? v.integrated_lufs - median : null
   return (
     <tr className="library-row">
       <td></td>
@@ -38,12 +57,7 @@ function LibraryRow({ song, v, median, player }: {
         <small>{v.rel_path}</small>
         {v.warnings.length > 0 && <ul className="warnings">{v.warnings.map(w => <li key={w}>{w}</li>)}</ul>}
       </td>
-      <td className="num">{duration(v.duration_seconds)}</td>
-      <td className="num">{isLossless(v.codec) ? <Badge tone="ok">{v.codec}</Badge> : `${v.bitrate_kbps ?? '—'} kbps`}</td>
-      <td className="num">{num(v.integrated_lufs)}<br /><small>{delta === null ? '' : `${signed(delta)} vs lib`}</small></td>
-      <td className="num">{num(v.true_peak_dbtp)}</td>
-      <td className="num">{num(v.loudness_range_lu)}</td>
-      <td className="num">{num(v.hf_gap_19k_db, 0)}</td>
+      <StatCells v={v} median={median} />
     </tr>
   )
 }
@@ -51,8 +65,6 @@ function LibraryRow({ song, v, median, player }: {
 function VersionRow({ song, v, median, kept, onKeep, player }: {
   song: Song; v: Version; median: number | null; kept: boolean; onKeep: () => void; player: Player
 }) {
-  const delta = median !== null && v.integrated_lufs !== null ? v.integrated_lufs - median : null
-  const lossless = isLossless(v.codec)
   return (
     <tr className={`${kept ? 'kept' : ''} ${song.suggested === v.path ? 'suggested' : ''} ${v.invalid ? 'invalid' : ''}`}>
       <td>
@@ -76,14 +88,7 @@ function VersionRow({ song, v, median, kept, onKeep, player }: {
         {v.same_audio_as.length > 0 && <> <Badge title={v.same_audio_as.join(', ')}>Same audio, other tags</Badge></>}
         {v.warnings.length > 0 && <ul className="warnings">{v.warnings.map(w => <li key={w}>{w}</li>)}</ul>}
       </td>
-      <td className="num">{duration(v.duration_seconds)}</td>
-      <td className="num">{lossless ? <Badge tone="ok">{v.codec}</Badge> : `${v.bitrate_kbps ?? '—'} kbps`}</td>
-      <td className="num">{num(v.integrated_lufs)}<br /><small>{delta === null ? '' : `${signed(delta)} vs lib`}</small></td>
-      <td className="num">{num(v.true_peak_dbtp)}</td>
-      <td className="num">{num(v.loudness_range_lu)}</td>
-      <td className="num" title="Level difference between the full signal and above 19.5 kHz. Lower means more detail.">
-        {num(v.hf_gap_19k_db, 0)}
-      </td>
+      <StatCells v={v} median={median} hfTitle />
     </tr>
   )
 }

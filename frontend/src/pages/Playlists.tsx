@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlaylistInfo, type PlaylistTrack } from '../api'
 import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { ListToolbar } from '../components/ListToolbar'
 import { Badge, Card, Empty, ErrorNote, StatusBadge } from '../components/ui'
-import { downloadCsv, when } from '../components/format'
+import { when } from '../components/format'
 
 type Filter = 'missing' | 'maybe' | 'waiting' | 'downloaded' | 'have' | 'all'
 
@@ -54,12 +55,6 @@ export default function Playlists() {
   })
 
   const current = lists.data?.find(p => p.id === tab)
-  const copyList = () => navigator.clipboard.writeText(rows.map(t => `${t.artists.join(', ')} - ${t.title}`).join('\n'))
-  const exportCsv = () => downloadCsv(`playlist-${current?.name ?? 'all'}-${filter}.csv`, [
-    ['Artist', 'Title', 'Status', 'Playlists', 'Projects', 'Local match'],
-    ...rows.map(t => [t.artists.join(', '), t.title, STATUS_LABEL[t.status], t.playlists.join('; '),
-      t.projects.join('; '), t.match?.relative_path ?? '']),
-  ])
 
   return (
     <>
@@ -103,12 +98,14 @@ export default function Playlists() {
         <Card label="In library" value={counts.have} selected={filter === 'have'} onClick={() => setFilter('have')} />
         <Card label="All" value={counts.all} selected={filter === 'all'} onClick={() => setFilter('all')} />
       </div>
-      <div className="row" style={{ marginBottom: 10 }}>
-        <input className="search" placeholder="Search artist or title" value={search} onChange={e => setSearch(e.target.value)} />
-        <span className="spacer" />
-        <button onClick={copyList} disabled={!rows.length}>Copy list</button>
-        <button onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
-      </div>
+      <ListToolbar search={search} onSearch={setSearch} placeholder="Search artist or title" empty={!rows.length}
+        copyText={() => rows.map(t => `${t.artists.join(', ')} - ${t.title}`).join('\n')}
+        csvName={`playlist-${current?.name ?? 'all'}-${filter}.csv`}
+        csvRows={() => [
+          ['Artist', 'Title', 'Status', 'Playlists', 'Projects', 'Local match'],
+          ...rows.map(t => [t.artists.join(', '), t.title, STATUS_LABEL[t.status], t.playlists.join('; '),
+            t.projects.join('; '), t.match?.relative_path ?? '']),
+        ]} />
       <div className="panel flush table-wrap">
         <table>
           <thead>
