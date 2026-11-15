@@ -39,6 +39,18 @@ class MatchingTest(unittest.TestCase):
         lib = [local("The Rapture", "How Deep Is Your Love")]
         self.assertEqual(self.match(spotify(["The Outfield"], "Your Love"), lib), "missing")
 
+    def test_one_shared_word_is_not_the_same_artist(self):
+        lib = [local("Beastie Boys", "Domino")]
+        self.assertEqual(self.match(spotify(["Pet Shop Boys"], "Domino"), lib), "maybe")   # same title, other artist
+        self.assertEqual(self.match(spotify(["John Foxx"], "Domino"), [local("John Lennon", "Domino")]), "maybe")
+
+    def test_featured_and_joint_artists_still_agree(self):
+        self.assertEqual(self.match(spotify(["Soft Cell", "Marc Almond"], "Tainted Love"),
+                                    [local("Soft Cell", "Tainted Love")]), "have")
+        self.assertEqual(self.match(spotify(["Soft Cell"], "Tainted Love"),
+                                    [local("Soft Cell & Marc Almond", "Tainted Love")]), "have")
+        self.assertEqual(self.match(spotify(["The Cure"], "A Forest"), [local("Cure", "A Forest")]), "have")
+
     def test_missing(self):
         self.assertEqual(self.match(spotify(["a-ha"], "Take on Me"), [local("Devo", "Whip It")]), "missing")
 

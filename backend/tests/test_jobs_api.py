@@ -197,3 +197,39 @@ def test_rms_levels_parser():
     from app.core.audio import rms_levels
     text = "x\n[Parsed_astats_9] RMS level dB: -20.5\nnoise\n[Parsed_astats_9] RMS level dB: -inf\n[a] RMS level dB: nan?\n"
     assert rms_levels(text) == [-20.5, float("-inf"), float("-inf")]
+
+
+def _id3(major, frames):
+    """A minimal ID3 tag: frames are (id, flag byte, payload)."""
+    body = b""
+    for frame_id, flag, payload in frames:
+        size = len(payload)
+        raw = bytes([(size >> 21) & 127, (size >> 14) & 127, (size >> 7) & 127, size & 127]) if major == 4 \
+            else size.to_bytes(4, "big")
+        body += frame_id.encode() + raw + bytes([0, flag]) + payload
+    n = len(body)
+    return b"ID3" + bytes([major, 0, 0]) + bytes([(n >> 21) & 127, (n >> 14) & 127, (n >> 7) & 127, n & 127]) + body
+
+
+def test_id3_flags_depend_on_the_version(tmp_path):
+    from app.core.tags import read_tags
+    text = lambda s: b"\x00" + s.encode("latin-1")   # noqa: E731
+    v23 = tmp_path / "a.mp3"
+    # In v2.3 0x08 is not "compressed" (it is 0x80), so this title must be read; 0x80 must be skipped.
+    v23.write_bytes(_id3(3, [("TIT2", 0x08, text("Kept")), ("TPE1", 0x80, text("Skipped"))]) + b"x" * 50)
+    assert read_tags(v23) == {"title": "Kept"}
+    v24 = tmp_path / "b.mp3"
+    # In v2.4 0x08 is compression (skip), 0x80 means nothing, and a data-length frame has 4 extra bytes first.
+    v24.write_bytes(_id3(4, [("TIT2", 0x08, text("Skipped")), ("TPE1", 0x01, b"\x00\x00\x00\x05" + text("Artist"))])
+                    + b"x" * 50)
+    assert read_tags(v24) == {"artist": "Artist"}
+
+
+def test_numeric_genre_references(tmp_path):
+    from app.core.tags import read_tags
+    text = lambda s: b"\x00" + s.encode("latin-1")   # noqa: E731
+    path = tmp_path / "g.mp3"
+    path.write_bytes(_id3(3, [("TCON", 0, text("(17)Rock")), ("TIT2", 0, text("T"))]) + b"x" * 50)
+    assert read_tags(path) == {"genre": "Rock", "title": "T"}
+    path.write_bytes(_id3(3, [("TCON", 0, text("(17)")), ("TIT2", 0, text("T"))]) + b"x" * 50)
+    assert read_tags(path) == {"title": "T"}

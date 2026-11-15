@@ -118,13 +118,17 @@ def _similar_candidates(wanted_artists, library, index):
 def match_track(spotify_track, library, index):
     core, descriptor = split_title(spotify_track["title"])
     version = distinct_version(descriptor)
-    wanted_artists = artist_tokens(", ".join(spotify_track["artists"]))
+    each_artist = [artist_tokens(a) for a in spotify_track["artists"]]
+    wanted_artists = set().union(*each_artist) if each_artist else set()
 
     def artists_agree(local):
         if not local["_artists"]:
             # No artist info locally: accept if an artist name appears anywhere in the path.
             return any(normalize(a) in local["_haystack"] for a in spotify_track["artists"])
-        return bool(wanted_artists & local["_artists"])
+        # A whole artist name must be there ("Pet Shop Boys" is not "Beastie Boys"), or the local artist
+        # must be made of the playlist's artists ("Soft Cell & Marc Almond" for a track by both).
+        return any(tokens and tokens <= local["_artists"] for tokens in each_artist) \
+            or local["_artists"] <= wanted_artists
 
     best, best_score, best_note = None, 0.0, ""
     for local in index.get(core, []):

@@ -52,9 +52,16 @@ def read_tags(path):
                         frame_flags = body[pos + 9] if pos + 9 < len(body) else 0
                     if not frame_id.strip("\x00") or size <= 0:
                         break
-                    if frame_id in WANTED and not frame_flags & 0x0C:  # skip compressed/encrypted
-                        tags.setdefault(WANTED[frame_id],
-                                        _decode_text(body[pos + header_len:pos + header_len + size]))
+                    # Frame flags differ by version: v2.3 has compression 0x80 and encryption 0x40,
+                    # v2.4 has compression 0x08, encryption 0x04, unsynchronisation 0x02 and a data length 0x01.
+                    skip = 0xC0 if major == 3 else 0x0C if major == 4 else 0
+                    if frame_id in WANTED and not frame_flags & skip:  # skip compressed/encrypted
+                        data = body[pos + header_len:pos + header_len + size]
+                        if major == 4 and frame_flags & 0x01:   # a 4-byte data length comes first
+                            data = data[4:]
+                        if major == 4 and frame_flags & 0x02:
+                            data = data.replace(b"\xff\x00", b"\xff")
+                        tags.setdefault(WANTED[frame_id], _decode_text(data))
                     pos += header_len + size
             if not tags.get("title"):
                 handle.seek(-128, os.SEEK_END)
@@ -66,9 +73,11 @@ def read_tags(path):
                             tags[key] = value
     except (OSError, ValueError, struct.error):
         pass
-    genre = tags.get("genre", "")
-    if re.fullmatch(r"\(\d+\)", genre):  # numeric ID3v1-style genre reference
-        tags.pop("genre")
+    genre = re.sub(r"^(\(\d+\))+\s*", "", tags.get("genre", ""))   # "(17)Rock" is "Rock"; "(17)" alone is only a number
+    if genre:
+        tags["genre"] = genre
+    else:
+        tags.pop("genre", None)
     return {k: v for k, v in tags.items() if v}
 
 
