@@ -33,7 +33,7 @@ def test_failed_job_is_marked_failed_and_logged(env, handlers):
     with session_scope() as s:
         job = s.get(Job, job_id)
         assert job.status == "failed" and "nope" in job.message and "Traceback" in job.log
-    assert not runner.busy()
+    assert not runner._contexts
 
 
 def test_ctrl_c_leaves_the_job_interrupted_not_done(env, handlers):
@@ -44,7 +44,7 @@ def test_ctrl_c_leaves_the_job_interrupted_not_done(env, handlers):
         runner.run_sync("t_stop", echo=lambda *_: None)
     with session_scope() as s:
         assert s.query(Job).one().status == "interrupted"
-    assert not runner.busy()
+    assert not runner._contexts
 
 
 def test_cancelled_job_and_missing_job_row_do_not_leave_runner_busy(env, handlers):
@@ -55,7 +55,7 @@ def test_cancelled_job_and_missing_job_row_do_not_leave_runner_busy(env, handler
     from app.jobs import JobContext
     runner._contexts[999] = JobContext(999, {})
     runner._run("t_cancel", runner._contexts[999])   # the row does not exist
-    assert not runner.busy()
+    assert not runner._contexts
 
 
 def test_queued_job_cancelled_before_it_starts_never_runs(env, handlers):

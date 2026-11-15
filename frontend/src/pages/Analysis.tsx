@@ -169,7 +169,7 @@ export default function Analysis() {
           <tbody>
             {data?.runs.map(r => (
               <tr key={r.id} {...clickableRow(() => setView(r.id))}>
-                <td>{r.label}{r.legacy && <> <Badge>imported</Badge></>}</td>
+                <td>{r.label}</td>
                 <td>{r.scope}</td>
                 <td className="num">{r.files}</td>
                 <td className="num">{num(r.median_lufs)}</td>

@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type PlaylistInfo, type Settings, type SpotifyStatus } from '../api'
-import { startJob } from '../components/jobsContext'
 import { Badge, ErrorNote } from '../components/ui'
 import { when } from '../components/format'
 import { attempt } from '../components/errorBus'
@@ -18,7 +17,6 @@ export default function SettingsPage() {
   const [sources, setSources] = useState<string | null>(null)
   const [newPlaylist, setNewPlaylist] = useState('')
   const [newProject, setNewProject] = useState('')
-  const [imported, setImported] = useState<Record<string, number> | null>(null)
   const refresh = () => ['settings', 'playlists', 'tracks', 'summary'].forEach(k => client.invalidateQueries({ queryKey: [k] }))
 
   const saveSources = useMutation({
@@ -31,16 +29,12 @@ export default function SettingsPage() {
   })
   const patch = (id: string, body: object) => attempt(api.patch(`/playlists/${id}`, body).then(refresh))
   const remove = (id: string) => attempt(api.del(`/playlists/${id}`).then(refresh))
-  const importLegacy = useMutation({
-    mutationFn: () => api.post<Record<string, number>>('/settings/import-legacy'),
-    onSuccess: data => { setImported(data); startJob('library_scan'); refresh() },
-  })
   const s = settings.data
 
   return (
     <>
       <div className="page-head"><div><h1>Settings</h1></div></div>
-      <ErrorNote error={settings.error || saveSources.error || add.error || importLegacy.error} />
+      <ErrorNote error={settings.error || saveSources.error || add.error} />
       {params.get('spotify') === 'connected' && <div className="callout ok">Spotify is connected. Refresh the playlists to read them in full.</div>}
       <div className="grid-2">
         <div className="panel">
@@ -86,13 +80,6 @@ export default function SettingsPage() {
                 Once, add this redirect URI to your app at developer.spotify.com: <code>{spotify.data.redirect_uri}</code>
               </small>
             </>
-          )}
-          <h2 style={{ marginTop: 20 }}>Import from the old projects</h2>
-          <p className="muted">Reads DJ_Loudness_Analyzer runs, its downloads cache, the dj-library log and the playlist list.
-            The old files are not changed. Safe to run more than once.</p>
-          <button onClick={() => importLegacy.mutate()} disabled={importLegacy.isPending}>Import</button>
-          {(imported ?? s?.legacy_imported) && (
-            <p style={{ marginTop: 8 }}><small className="muted">Last import: {Object.entries(imported ?? s?.legacy_imported ?? {}).map(([k, v]) => `${v} ${k.replace('_', ' ')}`).join(', ')}</small></p>
           )}
         </div>
       </div>

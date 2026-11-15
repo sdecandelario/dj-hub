@@ -1,4 +1,4 @@
-"""Settings, the home summary, and the legacy import."""
+"""Settings and the home summary."""
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +9,7 @@ from ..config import get_config
 from ..core import audio
 from ..jobs import job_dict
 from ..models import Batch, Decision, File, Job, Match, Mark
-from ..services import downloads, legacy, settings
+from ..services import downloads, settings
 from . import get_session
 
 router = APIRouter()
@@ -24,8 +24,7 @@ def get_settings(session=Depends(get_session, scope="function")):
     cfg = get_config()
     return {"root": str(cfg.root), "trash": str(cfg.trash), "db": str(cfg.db_path),
             "sources": [str(p) for p in settings.sources(session)], "sources_locked": settings.sources_locked(),
-            "settle_seconds": cfg.settle_seconds, "workers": cfg.workers, "missing_tools": audio.missing_tools(),
-            "legacy_imported": settings.get(session, "legacy_imported")}
+            "settle_seconds": cfg.settle_seconds, "workers": cfg.workers, "missing_tools": audio.missing_tools()}
 
 
 @router.put("/settings")
@@ -43,11 +42,6 @@ def put_settings(body: SettingsBody, session=Depends(get_session, scope="functio
             raise HTTPException(400, f"Not an existing folder (and not a top-level one): {', '.join(bad)}")
         settings.put(session, "sources", [str(p) for p in paths])
     return get_settings(session)
-
-
-@router.post("/settings/import-legacy")
-def import_legacy(session=Depends(get_session, scope="function")):
-    return legacy.import_all(session)
 
 
 @router.get("/summary")

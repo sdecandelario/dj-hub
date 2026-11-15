@@ -18,7 +18,6 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("DJ_TRASH", str(trash))
     monkeypatch.setenv("DJ_SOURCES", str(downloads))
     monkeypatch.setenv("DJ_HUB_DB", str(tmp_path / "test.db"))
-    monkeypatch.setenv("DJ_HUB_LEGACY_DIR", str(tmp_path / "legacy"))
     monkeypatch.setattr(spotify, "TOKEN_PATH", tmp_path / "token.json")
     monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
     config.reload_config()

@@ -1,12 +1,11 @@
 """File changes: the library rules, dry runs, apply, undo, and refusing stale previews."""
-import json
 from pathlib import Path
 
 import pytest
 
 from app.db import session_scope
 from app.models import Batch, FileOp
-from app.services import legacy, library
+from app.services import library
 
 from .conftest import fake_audio
 
@@ -130,22 +129,6 @@ def test_intake_refuses_files_outside_downloads_and_changed_files(env):
     assert not p.runnable()
     assert any("not inside a download folder" in x for x in p.problems)
     assert any("changed since the review" in x for x in p.problems)
-
-
-def test_legacy_djlib_log_import_and_undo(env):
-    moved = fake_audio(env.root / "Genres" / "EBM & Industrial" / "Nitzer Ebb - Join in the Chant.mp3")
-    log = [{"action": "move", "source": "Tracks/Nitzer Ebb - Join in the Chant.mp3",
-            "dest": "Genres/EBM & Industrial/Nitzer Ebb - Join in the Chant.mp3", "batch": "2026-11-08_11-21-37"}]
-    (env.root / ".djlib-log.jsonl").write_text("\n".join(json.dumps(e) for e in log), encoding="utf-8")
-    with session_scope() as s:
-        assert legacy.import_djlib_log(s, env.root / ".djlib-log.jsonl") == 1
-        assert legacy.import_djlib_log(s, env.root / ".djlib-log.jsonl") == 0   # safe to run twice
-        batch = s.query(Batch).filter_by(legacy_id="2026-11-08_11-21-37").one()
-        op = s.query(FileOp).filter_by(batch_id=batch.id).one()
-        assert op.source == str(env.root / "Tracks" / moved.name)
-        batch_id = batch.id
-    library.apply(session_scope, preview("undo", {"batch_id": batch_id}))
-    assert (env.root / "Tracks" / moved.name).exists() and not moved.exists()
 
 
 def test_intake_writes_tags_fills_album_and_undo_restores(env):
@@ -412,16 +395,6 @@ def test_intake_notes_the_same_audio_even_when_the_library_copy_was_retagged(env
     assert any("same audio is already in the library" in n and library_copy.name in n and "Other" not in n.split(":", 1)[1].split("possible")[0]
                for n in p.notes), p.notes
     assert any("possible upgrade" in n and other.name in n for n in p.notes)
-
-
-def test_legacy_import_skips_damaged_run_files(env):
-    from app.services import legacy
-    folder = env.tmp / "runs"
-    folder.mkdir()
-    (folder / "bad.json").write_text("{not json", encoding="utf-8")
-    (folder / "short.json").write_text('{"schema_version": 2}', encoding="utf-8")
-    with session_scope() as s:
-        assert legacy.import_runs(s, folder) == 0
 
 
 def test_spotify_login_states_expire_and_are_bounded(client, monkeypatch):

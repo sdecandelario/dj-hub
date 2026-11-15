@@ -19,7 +19,7 @@ from .core import library as lib
 from .db import session_scope
 from .jobs import runner
 from .models import Batch
-from .services import analysis as _a, downloads as _d, legacy, library, playlists as _p  # noqa: F401
+from .services import analysis as _a, downloads as _d, library, playlists as _p  # noqa: F401
 from .services import downloads
 
 
@@ -113,13 +113,6 @@ def cmd_dupes(args):
         for p in d["files"]:
             print(f"      {p}")
     print(f"  {len(report['same_name'])} found")
-
-
-def cmd_index(args):
-    with session_scope() as s:
-        out = [{k: t[k] for k in ("path", "kind", "folder", "artist", "title", "fp")} for t in library.scan(s)]
-    json.dump(out, sys.stdout, ensure_ascii=False, indent=1)
-    print()
 
 
 def _load(path):
@@ -270,13 +263,6 @@ def cmd_mark(args):
     print("\n".join(f"{args.status}: {line}" for line in out))
 
 
-def cmd_import_legacy(args):
-    with session_scope() as s:
-        result = legacy.import_all(s, args.legacy_dir)
-    print("Imported: " + ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in result.items()))
-    runner.run_sync("library_scan", {}, echo=print)
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="djhub", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -315,7 +301,6 @@ def main(argv=None):
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=cmd_history)
     sub.add_parser("dupes", help="duplicate songs").set_defaults(func=cmd_dupes)
-    sub.add_parser("index", help="JSON of every library file").set_defaults(func=cmd_index)
     sub.add_parser("review", help="measure and group the downloads (read-only)").set_defaults(func=cmd_review)
     p = sub.add_parser("analyze", help="loudness analysis of files or folders, in one run (read-only)")
     p.add_argument("paths", nargs="+", metavar="path")
@@ -338,9 +323,6 @@ def main(argv=None):
     p.add_argument("status", choices=("wanted", "dismissed", "new"))
     p.add_argument("ids", nargs="+", type=int)
     p.set_defaults(func=cmd_mark)
-    p = sub.add_parser("import-legacy", help="import data from the old DJ projects (read-only on them)")
-    p.add_argument("--legacy-dir")
-    p.set_defaults(func=cmd_import_legacy)
     args = parser.parse_args(argv)
     if not get_config().root.is_dir():
         sys.exit(f"Library not found: {get_config().root}")

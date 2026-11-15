@@ -93,9 +93,9 @@ def test_api_smoke(client, env):
     client.post("/api/jobs", json={"type": "library_scan"})
     import time
     deadline = time.monotonic() + 30
-    while runner.busy() and time.monotonic() < deadline:
+    while runner._contexts and time.monotonic() < deadline:
         time.sleep(0.05)
-    assert not runner.busy(), "the library scan did not finish"
+    assert not runner._contexts, "the library scan did not finish"
     files = client.get("/api/library/files", params={"kind": "inbox"}).json()
     assert [f["name"] for f in files] == [song.name]
     detail = client.get(f"/api/files/{files[0]['id']}").json()

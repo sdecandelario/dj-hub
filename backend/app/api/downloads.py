@@ -4,7 +4,6 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..jobs import runner
 from ..services import downloads, library
 from . import get_session
 
@@ -23,11 +22,6 @@ class ApplyBody(BaseModel):
 @router.get("/downloads")
 def review(session=Depends(get_session, scope="function")):
     return downloads.review_view(session)
-
-
-@router.post("/downloads/review")
-def start_review():
-    return {"id": runner.submit("review_downloads")}
 
 
 @router.put("/downloads/decisions/{song_key}")

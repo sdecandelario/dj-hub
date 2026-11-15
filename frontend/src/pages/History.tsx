@@ -102,7 +102,7 @@ export default function History() {
                     <td><small>{j.total ? `${j.done}/${j.total} · ` : ''}{j.message}</small></td>
                     <td><small>{when(j.started_at ?? j.created_at)}</small></td>
                     <td onClick={e => e.stopPropagation()}>
-                      {['interrupted', 'failed', 'cancelled'].includes(j.status) && !j.legacy_id && (
+                      {['interrupted', 'failed', 'cancelled'].includes(j.status) && (
                         <button className="small" onClick={() => attempt(api.post(`/jobs/${j.id}/resume`).then(() => jobs.refetch()))}>Resume</button>
                       )}
                       {['running', 'queued'].includes(j.status) && (

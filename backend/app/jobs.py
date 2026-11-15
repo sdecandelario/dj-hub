@@ -122,10 +122,6 @@ class JobRunner:
                 return True
         return False
 
-    def busy(self):
-        with self._lock:
-            return bool(self._contexts)
-
     def _run(self, type_, ctx):
         try:
             self._execute(type_, ctx)
@@ -181,6 +177,6 @@ def job_dict(job):
         "id": job.id, "type": job.type, "params": job.params, "status": job.status,
         "done": job.done, "total": job.total, "message": job.message,
         "summary": {k: v for k, v in (job.summary or {}).items() if k != "manifest"},
-        "legacy_id": job.legacy_id, "created_at": job.created_at, "started_at": job.started_at,
+        "created_at": job.created_at, "started_at": job.started_at,
         "finished_at": job.finished_at,
     }

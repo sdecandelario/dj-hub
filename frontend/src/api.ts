@@ -52,7 +52,6 @@ export type Job = {
   total: number
   message: string
   summary: Record<string, unknown>
-  legacy_id: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null
@@ -162,7 +161,6 @@ export type Run = {
   status: string
   config: { input: string; [key: string]: unknown }
   created_at: string
-  legacy: boolean
   files: number
   median_lufs: number | null
 }
@@ -300,7 +298,6 @@ export type Settings = {
   settle_seconds: number
   workers: number
   missing_tools: string[]
-  legacy_imported: Record<string, number> | null
 }
 
 export type SpotifyStatus = { keys: boolean; logged_in: boolean; redirect_uri: string }

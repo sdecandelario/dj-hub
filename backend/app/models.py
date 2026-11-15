@@ -47,7 +47,6 @@ class Job(Base):
     message: Mapped[str] = mapped_column(Text, default="")
     log: Mapped[str] = mapped_column(Text, default="")
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
-    legacy_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
     pid: Mapped[int | None] = mapped_column(Integer, nullable=True)   # process running it (CLI or server)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     started_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
@@ -65,7 +64,7 @@ class Measurement(Base):
     mtime_ns: Mapped[str | None] = mapped_column(String, nullable=True)
     measured_at: Mapped[dt.datetime] = mapped_column(default=now)
     full: Mapped[bool] = mapped_column(Boolean, default=False)       # includes the downloads quality checks
-    origin: Mapped[str] = mapped_column(String, default="app")       # app | reused | legacy-run | legacy-cache
+    origin: Mapped[str] = mapped_column(String, default="app")       # app | reused
     status: Mapped[str] = mapped_column(String, default="")
     error: Mapped[str] = mapped_column(Text, default="")
     integrated_lufs: Mapped[float | None] = mapped_column(Float, nullable=True)

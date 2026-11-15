@@ -74,11 +74,6 @@ def remove(playlist_id: str, session=Depends(get_session, scope="function")):
     return {"ok": True}
 
 
-@router.post("/playlists/refresh")
-def refresh():
-    return {"id": runner.submit("spotify_refresh")}
-
-
 @router.put("/playlists/marks/{spotify_id}")
 def mark(spotify_id: str, body: MarkBody, session=Depends(get_session, scope="function")):
     playlists.set_mark(session, spotify_id, body.downloaded)

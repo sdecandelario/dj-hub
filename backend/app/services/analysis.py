@@ -229,11 +229,10 @@ def runs(session, with_tracks=True):
         summary = job.summary or {}
         tracks = by_job.get(job.id, [])
         out.append({
-            "id": job.id, "label": job.legacy_id or job.created_at.strftime("%Y-%m-%d %H:%M"),
+            "id": job.id, "label": job.created_at.strftime("%Y-%m-%d %H:%M"),
             "scope": summary.get("scope", "file"), "complete": bool(summary.get("complete")),
             "status": job.status, "config": summary.get("config") or {"input": job.params.get("path", "")},
             "manifest": summary.get("manifest") or [], "tracks": tracks, "created_at": job.created_at,
-            "legacy": bool(job.legacy_id),
         })
     return out
 

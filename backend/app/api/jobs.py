@@ -74,7 +74,7 @@ def cancel(job_id: int):
 @router.post("/jobs/{job_id}/resume")
 def resume(job_id: int, session=Depends(get_session, scope="function")):
     row = session.get(Job, job_id)
-    if row is None or row.status not in ("interrupted", "failed", "cancelled") or row.legacy_id:
+    if row is None or row.status not in ("interrupted", "failed", "cancelled"):
         raise HTTPException(400, "Only interrupted, failed or cancelled jobs can be resumed")
     session.commit()
     return {"id": runner.submit(row.type, job_id=job_id)}

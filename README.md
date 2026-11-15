@@ -19,8 +19,6 @@ make setup
 make start              # http://127.0.0.1:8000
 ```
 
-The history of the old projects was imported on 2026-11-08 (`make import-legacy`, kept for reference; the old folders are gone).
-
 `make dev` runs the API with auto-reload and the Vite dev server (http://127.0.0.1:5173).
 
 ## Spotify
@@ -55,7 +53,7 @@ uv run --project ~/Projects/dj-hub/backend djhub apply plan.json --apply
 uv run --project ~/Projects/dj-hub/backend djhub undo --apply
 ```
 
-Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`, `dupes`, `index`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, `import-legacy`, and for new music `discover`, `candidates`, `mark`.
+Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`, `dupes`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, and for new music `discover`, `candidates`, `mark`.
 
 ## Configuration
 
@@ -77,6 +75,6 @@ make migration m="..."  # after changing backend/app/models.py
 
 - `backend/app/core`: logic ported from the old scripts (tags, names, audio, library rules, download ranking, matching).
 - `backend/app/integrations`: the Spotify and Last.fm clients (network, login file, env vars).
-- `backend/app/services`: use cases (library batches, analysis, downloads review, playlists, legacy import).
+- `backend/app/services`: use cases (library batches, analysis, downloads review, playlists).
 - `backend/app/api`: HTTP routes under `/api`. `backend/app/jobs.py`: background jobs with progress.
 - `frontend/src/pages`: one file per page.

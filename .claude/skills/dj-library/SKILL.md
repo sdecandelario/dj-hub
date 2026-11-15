@@ -55,13 +55,11 @@ Choose by artist and track, using your music knowledge, the `genre_tag` (often g
 | `intake-decided [--apply]` | Same, for the songs the user decided on the app's Downloads page |
 | `review` | Measure and group the downloads (read-only); results show on the Downloads page |
 | `history` | Recent batches with their IDs |
-| `index` | JSON of every library file (used by the downloads review) |
 | `undo [--batch ID] [--apply]` | Revert the last applied change, or a given batch (number, or an old djlib batch name) |
 | `dupes` | Same file under two names, and same artist+title in different files |
 | `analyze PATH...` | Loudness analysis of files or folders (read-only); results show on the Analysis page |
 | `refresh-playlists` | Read the Spotify playlists and match them against the library (calls Spotify: ask first) |
 | `scan-library` | Update the app's view of the library after files changed outside the app |
-| `import-legacy` | One-time import of the old projects' history (already done) |
 
 Plan file format (write it to the session scratchpad, not the library):
 

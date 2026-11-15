@@ -10,7 +10,7 @@ export default function Home() {
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') })
   const jobs = useActiveJobs()
   const navigate = useNavigate()
-  const empty = data && !data.library_files && !settings.data?.legacy_imported
+  const empty = data && !data.library_files
 
   return (
     <>

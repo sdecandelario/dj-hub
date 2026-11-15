@@ -58,14 +58,6 @@ def files(kind: str | None = None, folder: str | None = None, q: str | None = No
     return [file_dict(r) | {"loudness": latest.get(r.path)} for r in rows]
 
 
-@router.get("/library/status")
-def status(session=Depends(get_session, scope="function")):
-    tracks = library.scan(session)
-    report = lib.status(tracks)
-    report["dupes"] = lib.dupes(tracks)
-    return report
-
-
 @router.get("/files/{file_id}")
 def file_detail(file_id: int, session=Depends(get_session, scope="function")):
     row = session.get(File, file_id)
