@@ -125,8 +125,6 @@ def upgrade():
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('owner', sa.String(), nullable=False),
     sa.Column('cover', sa.String(), nullable=True),
-    sa.Column('source', sa.String(), nullable=False),
-    sa.Column('possibly_truncated', sa.Boolean(), nullable=False),
     sa.Column('project', sa.String(), nullable=False),
     sa.Column('position', sa.Integer(), nullable=False),
     sa.Column('tracked', sa.Boolean(), nullable=False),

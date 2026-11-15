@@ -83,8 +83,7 @@ export default function Playlists() {
       {current && (
         <p className="muted">
           {current.owner && `${current.owner} · `}{current.counts.total} tracks · {current.project || 'No project'} ·
-          read {when(current.refreshed_at)} via {current.source === 'api' ? 'Spotify API' : 'embed page'}
-          {current.possibly_truncated && <Badge tone="warn">Only first 100 tracks: connect Spotify in Settings</Badge>}
+          read {when(current.refreshed_at)}
         </p>
       )}
       <div className="cards">

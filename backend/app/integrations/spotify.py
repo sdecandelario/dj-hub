@@ -1,7 +1,6 @@
 """Read Spotify playlists.
 
-With SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET and a saved login, the Web API reads
-full playlists. Otherwise the public embed page is used (first 100 tracks only).
+Reads full playlists through the Web API. Needs SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET and a saved login.
 The login is saved next to the database (readable only by the user) and is never printed.
 """
 import base64
@@ -45,37 +44,6 @@ def http_get(url, headers=None, data=None):
     request = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT, **(headers or {})})
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8")
-
-
-def fetch_playlist_embed(playlist_id):
-    """Read a public playlist from the Spotify embed page. No credentials needed,
-    but Spotify only includes the first 100 tracks."""
-    html = http_get(f"https://open.spotify.com/embed/playlist/{playlist_id}")
-    match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.S)
-    if not match:
-        raise RuntimeError("Spotify embed page has an unexpected format")
-    entity = json.loads(match.group(1))["props"]["pageProps"]["state"]["data"]["entity"]
-    covers = (entity.get("coverArt") or {}).get("sources") or []
-    tracks = []
-    for item in entity.get("trackList", []):
-        uri = item.get("uri", "")
-        if not uri.startswith("spotify:track:"):
-            continue
-        tracks.append({
-            "spotify_id": uri.rsplit(":", 1)[-1],
-            "title": item.get("title", ""),
-            "artists": [a.strip() for a in item.get("subtitle", "").split(",") if a.strip()],
-            "duration_ms": item.get("duration"),
-        })
-    return {
-        "id": playlist_id,
-        "name": entity.get("name") or entity.get("title") or playlist_id,
-        "owner": entity.get("subtitle", ""),
-        "cover": max(covers, key=lambda c: c.get("width") or 0)["url"] if covers else None,
-        "source": "embed",
-        "possibly_truncated": len(tracks) >= 100,
-        "tracks": tracks,
-    }
 
 
 class SpotifyLoginError(RuntimeError):
@@ -209,13 +177,13 @@ def _login_in_browser(client_id, client_secret):
 
 
 def spotify_token(interactive=None):
-    """Return a user access token, or None when no app keys are set.
+    """Return a user access token.
 
     Reuses the saved refresh token. A browser login only happens in an interactive
     terminal; the web app uses its own login page instead."""
     client_id, client_secret = app_keys()
     if not (client_id and client_secret):
-        return None
+        raise SpotifyLoginError("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set")
     if interactive is None:
         interactive = sys.stdin.isatty()
     refresh_token = _read_refresh_token()
@@ -253,7 +221,7 @@ def api_get(url, headers):
         return http_get(url, headers)
 
 
-def fetch_playlist_api(playlist_id, token):
+def fetch_playlist(playlist_id, token):
     """Read a full playlist through the Spotify Web API (user login)."""
     headers = {"Authorization": f"Bearer {token}"}
     meta = json.loads(api_get(
@@ -287,18 +255,5 @@ def fetch_playlist_api(playlist_id, token):
         "name": meta.get("name") or playlist_id,
         "owner": (meta.get("owner") or {}).get("display_name", ""),
         "cover": images[0]["url"] if images else None,
-        "source": "api",
-        "possibly_truncated": False,
         "tracks": tracks,
     }
-
-
-def fetch_playlist(playlist_id, token):
-    if token:
-        try:
-            return fetch_playlist_api(playlist_id, token)
-        except urllib.error.HTTPError as error:
-            warn(f"Spotify API failed ({error.code}); falling back to the embed page")
-        except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
-            warn(f"Spotify API failed ({error}); falling back to the embed page")
-    return fetch_playlist_embed(playlist_id)

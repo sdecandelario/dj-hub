@@ -129,8 +129,6 @@ class Playlist(Base):
     name: Mapped[str] = mapped_column(String, default="")
     owner: Mapped[str] = mapped_column(String, default="")
     cover: Mapped[str | None] = mapped_column(String, nullable=True)
-    source: Mapped[str] = mapped_column(String, default="")          # api | embed
-    possibly_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
     project: Mapped[str] = mapped_column(String, default="")         # DJ project this playlist defines
     position: Mapped[int] = mapped_column(Integer, default=0)
     tracked: Mapped[bool] = mapped_column(Boolean, default=True)

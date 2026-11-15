@@ -251,8 +251,6 @@ export type PlaylistInfo = {
   name: string
   owner: string
   cover: string | null
-  source: string
-  possibly_truncated: boolean
   project: string
   tracked: boolean
   refreshed_at: string | null

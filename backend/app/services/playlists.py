@@ -1,6 +1,4 @@
 """Spotify playlists vs the library, and which waiting downloads fill the gaps."""
-import urllib.error
-
 from sqlalchemy import delete, select
 
 from ..core import matching
@@ -33,12 +31,7 @@ def run_refresh(ctx):
         names = {p.id: p.name for p in s.scalars(select(Playlist)).all() if p.name}
     if not ids:
         raise ValueError("No playlists configured. Add one in Settings.")
-    try:
-        token = spotify.spotify_token(interactive=False)
-    except (spotify.SpotifyLoginError, urllib.error.URLError, OSError, ValueError, KeyError) as error:
-        ctx.log(f"Spotify login unavailable ({error}); using the embed pages (first 100 tracks)")
-        token = None
-    ctx.log("Using Spotify Web API" if token else "Using Spotify embed pages (first 100 tracks per playlist)")
+    token = spotify.spotify_token(interactive=False)
     failed = []
     for i, playlist_id in enumerate(ids, 1):
         ctx.check()
@@ -51,22 +44,17 @@ def run_refresh(ctx):
             continue
         with session_scope() as s:
             row = s.get(Playlist, playlist_id)
-            if token and data["source"] != "api" and row is not None and row.source == "api":
-                # The API failed and the embed page only has the first 100 tracks: keep the full copy.
-                ctx.log(f"{playlist_id}: the Spotify API failed; kept the stored full playlist")
-                failed.append(playlist_id)
-                continue
             if row is None:
                 row = Playlist(id=playlist_id, position=i)
                 s.add(row)
             row.name, row.owner, row.cover = data["name"], data["owner"], data["cover"]
-            row.source, row.possibly_truncated, row.refreshed_at = data["source"], data["possibly_truncated"], now()
+            row.refreshed_at = now()
             s.execute(delete(PlaylistTrack).where(PlaylistTrack.playlist_id == playlist_id))
             for position, track in enumerate(data["tracks"]):
                 s.add(PlaylistTrack(playlist_id=playlist_id, position=position, spotify_id=track["spotify_id"],
                                     title=track["title"], artists=track["artists"],
                                     duration_ms=track.get("duration_ms")))
-        ctx.log(f"{data['name']}: {len(data['tracks'])} tracks ({data['source']})")
+        ctx.log(f"{data['name']}: {len(data['tracks'])} tracks")
     ctx.progress(len(ids), len(ids), "Matching against the library")
     with session_scope() as s:
         counts = match_all(s)
@@ -186,8 +174,7 @@ def overview(session):
                 counts["downloaded"] += 1
             if status != "have" and m and m.download_song_key:
                 counts["waiting"] += 1
-        out.append({"id": p.id, "name": p.name, "owner": p.owner, "cover": p.cover, "source": p.source,
-                    "possibly_truncated": p.possibly_truncated, "project": p.project, "tracked": p.tracked,
+        out.append({"id": p.id, "name": p.name, "owner": p.owner, "cover": p.cover, "project": p.project, "tracked": p.tracked,
                     "refreshed_at": p.refreshed_at, "counts": counts})
     return out
 

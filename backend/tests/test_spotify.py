@@ -41,9 +41,10 @@ class TokenTest(unittest.TestCase):
         self.token_path.parent.mkdir(parents=True, exist_ok=True)
         self.token_path.write_text(text, encoding="utf-8")
 
-    def test_no_keys_returns_none(self):
+    def test_no_keys_is_a_login_error(self):
         with mock.patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "", "SPOTIFY_CLIENT_SECRET": ""}):
-            self.assertIsNone(c.spotify_token())
+            with self.assertRaises(c.SpotifyLoginError):
+                c.spotify_token()
 
     def test_refresh_saves_rotated_token_with_private_mode(self):
         self.save(json.dumps({"refresh_token": "old"}))
@@ -183,16 +184,15 @@ class FetchPlaylistTest(unittest.TestCase):
         responses = [(f"{base}?", self.META), (f"{base}/items", json.dumps(page1)),
                      ("https://api.spotify.com/next", json.dumps(page2))]
         with mock.patch.object(c, "http_get", side_effect=self.fake_get(responses)):
-            playlist = c.fetch_playlist_api("P", "T")
+            playlist = c.fetch_playlist("P", "T")
         self.assertEqual([t["spotify_id"] for t in playlist["tracks"]], ["1", "2", "4"])
-        self.assertEqual(playlist["source"], "api")
 
     def test_items_404_falls_back_to_tracks_endpoint(self):
         base = "https://api.spotify.com/v1/playlists/P"
         responses = [(f"{base}?", self.META), (f"{base}/items", http_error(404)),
                      (f"{base}/tracks", json.dumps({"items": [api_track("1", "One")], "next": None}))]
         with mock.patch.object(c, "http_get", side_effect=self.fake_get(responses)):
-            self.assertEqual(len(c.fetch_playlist_api("P", "T")["tracks"]), 1)
+            self.assertEqual(len(c.fetch_playlist("P", "T")["tracks"]), 1)
 
     def test_429_waits_and_retries_once(self):
         calls = []
@@ -206,21 +206,6 @@ class FetchPlaylistTest(unittest.TestCase):
             self.assertEqual(c.api_get("https://api.spotify.com/x", {}), "ok")
         sleep.assert_called_once_with(2)
         self.assertEqual(len(calls), 2)
-
-    def test_api_errors_fall_back_to_embed(self):
-        for error in (http_error(401), http_error(403), urllib.error.URLError("offline"), TimeoutError("slow")):
-            with self.subTest(error=error), \
-                    mock.patch.object(c, "fetch_playlist_api", side_effect=error), \
-                    mock.patch.object(c, "fetch_playlist_embed", return_value={"source": "embed"}) as embed, \
-                    mock.patch("sys.stderr", io.StringIO()):
-                self.assertEqual(c.fetch_playlist("P", "T")["source"], "embed")
-                embed.assert_called_once_with("P")
-
-    def test_no_token_uses_embed(self):
-        with mock.patch.object(c, "fetch_playlist_api") as api, \
-                mock.patch.object(c, "fetch_playlist_embed", return_value={"source": "embed"}):
-            self.assertEqual(c.fetch_playlist("P", None)["source"], "embed")
-        api.assert_not_called()
 
 
 if __name__ == "__main__":

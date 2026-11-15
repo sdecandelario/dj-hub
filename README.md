@@ -23,7 +23,7 @@ make start              # http://127.0.0.1:8000
 
 ## Spotify
 
-Without keys, the public embed page is read (first 100 tracks per playlist). For full playlists:
+Playlists are read through the Spotify Web API, which needs a login:
 
 1. In your app at https://developer.spotify.com/dashboard add the redirect URI `http://127.0.0.1:8000/api/spotify/callback`.
 2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zshrc`).

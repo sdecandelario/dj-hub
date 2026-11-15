@@ -68,8 +68,8 @@ export default function SettingsPage() {
           <h2>Spotify</h2>
           {spotify.data && !spotify.data.keys && (
             <div className="callout warn">
-              SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set in the shell that started the app. Without them only
-              the first 100 tracks of each playlist are read.
+              SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set in the shell that started the app. Without them
+              playlists cannot be read.
             </div>
           )}
           {spotify.data?.keys && (
@@ -95,7 +95,7 @@ export default function SettingsPage() {
                 <td>
                   <input list="projects" defaultValue={p.project} onBlur={e => e.target.value !== p.project && patch(p.id, { project: e.target.value })} />
                 </td>
-                <td>{p.counts.total}{p.possibly_truncated && <> <Badge tone="warn">first 100</Badge></>}</td>
+                <td>{p.counts.total}</td>
                 <td><small>{when(p.refreshed_at)}</small></td>
                 <td><input type="checkbox" checked={p.tracked} onChange={e => patch(p.id, { tracked: e.target.checked })} /></td>
                 <td><button className="small danger" onClick={() => { if (window.confirm(`Remove "${p.name || p.id}" and its tracks from the app? Spotify is not changed.`)) remove(p.id) }}>Remove</button></td>
