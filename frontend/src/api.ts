@@ -311,3 +311,22 @@ export type Summary = {
   recent_batches: { id: number; label: string; status: string; created_at: string; kind: string }[]
   decisions: number
 }
+
+export type RekordboxTrack = {
+  title: string
+  old_path: string
+  reason: string
+  logs: string[]
+  status: 'ok' | 'moved' | 'replaced' | 'similar' | 'missing'
+  new_path: string
+  new_rel: string
+  file_id: number | null
+  candidates: { path: string; rel_path: string; kind: string; file_id: number | null }[]
+  trail: { batch_id: number; batch: string; status: string; action: string; dest: string }[]
+}
+
+export type RekordboxReview = {
+  folder: string
+  logs: { name: string; tracks: number }[]
+  tracks: RekordboxTrack[]
+}

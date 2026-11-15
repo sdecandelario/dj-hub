@@ -9,6 +9,7 @@ import History from './pages/History'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Playlists from './pages/Playlists'
+import Rekordbox from './pages/Rekordbox'
 import SettingsPage from './pages/Settings'
 
 function Nav() {
@@ -19,6 +20,7 @@ function Nav() {
     ['/downloads', 'Downloads', data?.review_pending],
     ['/library', 'Library', data?.inbox],
     ['/analysis', 'Analysis', undefined],
+    ['/rekordbox', 'Rekordbox', undefined],
     ['/history', 'History', undefined],
     ['/settings', 'Settings', undefined],
   ]
@@ -50,6 +52,7 @@ export default function App() {
               <Route path="/downloads" element={<Downloads />} />
               <Route path="/library" element={<Library />} />
               <Route path="/analysis" element={<Analysis />} />
+              <Route path="/rekordbox" element={<Rekordbox />} />
               <Route path="/history" element={<History />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
