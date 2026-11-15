@@ -6,6 +6,8 @@ import { Badge, ErrorNote, StatusBadge } from '../components/ui'
 import { clickableRow, JOB_LABELS, when } from '../components/format'
 import { attempt } from '../components/errorBus'
 
+const MAX_LIMIT = 500
+
 function BatchOps({ id }: { id: number }) {
   const { data } = useQuery({ queryKey: ['batches', id], queryFn: () => api.get<Batch>(`/batches/${id}`) })
   if (!data) return <small className="muted">Loading…</small>
@@ -37,8 +39,14 @@ export default function History() {
   const [tab, setTab] = useState<'batches' | 'jobs'>('batches')
   const [open, setOpen] = useState<number | null>(null)
   const batch = useBatch()
-  const batches = useQuery({ queryKey: ['batches'], queryFn: () => api.get<Batch[]>('/batches') })
-  const jobs = useQuery({ queryKey: ['jobs'], queryFn: () => api.get<Job[]>('/jobs'), refetchInterval: 5000 })
+  const [limit, setLimit] = useState(100)
+  const batches = useQuery({ queryKey: ['batches', 'list', limit], queryFn: () => api.get<Batch[]>(`/batches?limit=${limit}`) })
+  // Jobs refresh by themselves only while their tab is shown.
+  const jobs = useQuery({ queryKey: ['jobs', 'list', limit], queryFn: () => api.get<Job[]>(`/jobs?limit=${limit}`),
+    refetchInterval: tab === 'jobs' ? 5000 : false })
+  const more = (list?: unknown[]) => list && list.length >= limit && limit < MAX_LIMIT && (
+    <p><button onClick={() => setLimit(limit + 100)}>Show older</button></p>
+  )
 
   return (
     <>
@@ -79,6 +87,7 @@ export default function History() {
           </table>
         </div>
       )}
+      {tab === 'batches' && more(batches.data)}
       {tab === 'jobs' && (
         <div className="panel flush table-wrap">
           <table>
@@ -108,6 +117,7 @@ export default function History() {
           </table>
         </div>
       )}
+      {tab === 'jobs' && more(jobs.data)}
     </>
   )
 }

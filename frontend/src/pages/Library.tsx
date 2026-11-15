@@ -108,7 +108,10 @@ export default function Library() {
             <Badge>{plural(files.data?.length ?? 0, 'file')}</Badge>
             <span className="spacer" />
             {(kind || !search) && (
-              <button className="small" onClick={() => startJob('analyze', { path: `${tree.data?.root}/${path}`.replace(/\/$/, '') })}>
+              <button className="small" onClick={() => {
+                if (!kind && !window.confirm('Analyze the whole library? This can take a long time. Files measured before are reused.')) return
+                startJob('analyze', { path: `${tree.data?.root}/${path}`.replace(/\/$/, '') })
+              }}>
                 Analyze {kind ? 'folder' : 'library'}
               </button>
             )}

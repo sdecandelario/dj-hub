@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AnalysisOverview, type Measurement } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
-import { Badge, Card, ErrorNote, StatusBadge } from '../components/ui'
+import { Badge, Card, Empty, ErrorNote, StatusBadge } from '../components/ui'
 import { clickableRow, num, signed, when } from '../components/format'
 import { contextFor, isValid, judge, median, order, type Level, type Verdict } from '../verdict'
 
@@ -27,6 +27,7 @@ export default function Analysis() {
     enabled: view !== 'current',
   })
 
+  const loadingRun = view !== 'current' && runTracks.isLoading
   const references = data?.references ?? []
   const reference = references.find(r => String(r.id) === refId) ?? references[0]
   const ref = reference?.median_lufs ?? null
@@ -72,7 +73,8 @@ export default function Analysis() {
           <p className="muted">LUFS, true peak and loudness range for each file. Every run is kept as history. Audio files are only read. Start an analysis from the <Link to="/library">Library</Link>.</p>
         </div>
       </div>
-      <ErrorNote error={error} />
+      <ErrorNote error={error || runTracks.error} />
+      {loadingRun && <Empty>Loading this run…</Empty>}
       {data && !data.runs.length && (
         <div className="panel"><p className="muted">No runs yet. Select songs or a folder in the <Link to="/library">Library</Link> and click Analyze.</p></div>
       )}

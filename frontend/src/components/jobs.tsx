@@ -19,6 +19,7 @@ const REFRESH: Record<string, string[]> = {
 /** Subscribes to /api/events and keeps the list of active jobs; refreshes data when jobs finish. */
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([])
+  const [offline, setOffline] = useState(false)
   const seen = useRef(new Map<number, string>())
   const client = useQueryClient()
 
@@ -46,6 +47,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       } else if (!source) {
         source = new EventSource('/api/events')
         source.addEventListener('jobs', onJobs)
+        source.onopen = () => setOffline(false)
+        source.onerror = () => setOffline(true)   // the browser keeps retrying by itself
         // Catch up on anything that finished while the tab was hidden.
         client.invalidateQueries()
       }
@@ -58,7 +61,12 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }
   }, [client])
 
-  return <JobsContext.Provider value={jobs}>{children}</JobsContext.Provider>
+  return (
+    <JobsContext.Provider value={jobs}>
+      {offline && <div className="callout warn offline-note" role="status">Lost the live connection to the app. Retrying…</div>}
+      {children}
+    </JobsContext.Provider>
+  )
 }
 
 export function JobBar() {
