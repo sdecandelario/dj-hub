@@ -435,3 +435,19 @@ def test_spotify_login_states_expire_and_are_bounded(client, monkeypatch):
         assert client.get("/api/spotify/login", follow_redirects=False).status_code in (302, 307)
     assert len(api._login_states) == api.MAX_LOGIN_STATES
     api._login_states.clear()
+
+
+def test_apply_plan_edge_cases(env):
+    one = fake_audio(env.root / "00 Inbox" / "A - One.mp3", b"1")
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "A - One.mp3", b"2")   # another song, same file name
+    two = fake_audio(env.root / "00 Inbox" / "B - Two.mp3", b"3")
+    move = lambda src, to, **extra: {"source": src, "to": to, "action": "move", **extra}   # noqa: E731
+    p = plan("apply", {"items": [move("00 Inbox/B - Two.mp3", "Genres/EBM & Industrial"),
+                                 move("00 Inbox/B - Two.mp3", "Genres/Synth-Pop & New Wave")]})
+    assert len(p.steps) == 1 and "moved twice" in p.problems[0]
+    p = plan("apply", {"items": [move(f"00 Inbox/{one.name}", "Genres/EBM & Industrial")]})
+    assert not p.steps and "a different file named" in p.problems[0]
+    p = plan("apply", {"items": [{"source": "nope.mp3", "to": "Genres/X", "action": "move"},
+                                 {"source": two.name, "to": "Genres/X", "action": "fly"},
+                                 {"source": "00 Inbox/B - Two.mp3", "to": "Elsewhere/X", "action": "move"}]})
+    assert len(p.problems) == 3 and not p.steps

@@ -252,74 +252,99 @@ def plan_apply(root, tracks, items):
              optional "artist" and "title": rename an Inbox file while moving it}]
     `source` is the song's path when the plan starts; later steps follow earlier moves.
     """
-    root = Path(root)
-    songs = by_song(tracks)
-    fp_of = {t["path"]: t["fp"] for t in tracks}
-    planned = {}   # (target folder, fp) -> new file, so a plan cannot add a song twice
-    located = {}   # original source -> where an earlier step of this plan moved it
-    gone = set()   # files an earlier step moved away
-    genres = {fp: set(genre_folders(copies)) for fp, copies in songs.items()}
-    plan = Plan("apply")
-    for item in items:
+    return _ApplyPlanner(root, tracks).run(items)
+
+
+class _ApplyPlanner:
+    """State of one `plan_apply`: what earlier items of the same plan already did. A problem with an item
+    is a ValueError; the item is then skipped and the problem listed."""
+
+    def __init__(self, root, tracks):
+        self.root = Path(root)
+        self.songs = by_song(tracks)
+        self.fp_of = {t["path"]: t["fp"] for t in tracks}
+        self.planned = {}   # (target folder, fp) -> new file, so a plan cannot add a song twice
+        self.located = {}   # original source -> where an earlier step of this plan moved it
+        self.gone = set()   # files an earlier step moved away
+        self.genres = {fp: set(genre_folders(copies)) for fp, copies in self.songs.items()}
+        self.plan = Plan("apply")
+
+    def run(self, items):
+        for item in items:
+            try:
+                self._add(item)
+            except ValueError as error:
+                self.plan.problems.append(str(error))
+        return self.plan
+
+    def _parse(self, item):
+        """(source, target folder, action, target kind, target name) of an item, or ValueError."""
         source, to, action = item.get("source", ""), item.get("to", ""), item.get("action", "copy")
-        try:
-            to_kind, to_name = _check_target(to)
-            to = str(Path(to))
-            _inside_root(root, source)
-            if action not in ("copy", "move"):
-                raise ValueError(f"unknown action {action!r}")
-            if source not in fp_of:
-                raise ValueError(f"not a library audio file: {source}")
-        except ValueError as error:
-            plan.problems.append(str(error))
-            continue
-        current = located.get(source, source)
-        if action == "move" and source in located:
-            plan.problems.append(f"{source}: moved twice in one plan; list one move per file")
-            continue
-        kind, folder = classify(Path(current))
-        fp = fp_of[source]
+        to_kind, to_name = _check_target(to)
+        _inside_root(self.root, source)
+        if action not in ("copy", "move"):
+            raise ValueError(f"unknown action {action!r}")
+        if source not in self.fp_of:
+            raise ValueError(f"not a library audio file: {source}")
+        return source, str(Path(to)), action, to_kind, to_name
+
+    @staticmethod
+    def _check_move_out(source, kind, action, to_kind):
         if action == "move" and kind == "genre" and to_kind != "genre":
-            plan.problems.append(f"{source}: moving out of a genre folder would leave the song without a genre; "
-                                 "use copy")
-            continue
-        existing = [c["path"] for c in songs[fp]
-                    if str(Path(c["path"]).parent) == to and c["path"] not in gone]
-        if existing or (to, fp) in planned:
-            plan.steps.append(Step("skip", str(root / current), "",
-                                   f"already there: {existing[0] if existing else planned[(to, fp)]}"))
-            continue
-        if to_kind == "genre":
-            after = set(genres[fp])
-            if action == "move" and kind == "genre":
-                after.discard(folder)
-            after.add(to_name)
-            if len(after) > 1:
-                plan.problems.append(f"{source}: would be in genres {', '.join(sorted(after))}; "
-                                     "a song keeps one genre (move it from its genre folder to change genre)")
-                continue
-            genres[fp] = after
-        tags, file_name = {}, Path(source).name
+            raise ValueError(f"{source}: moving out of a genre folder would leave the song without a genre; "
+                             "use copy")
+
+    def _check_genre(self, source, fp, kind, folder, action, to_kind, to_name):
+        """A song keeps one genre folder: adding a second one is refused."""
+        if to_kind != "genre":
+            return
+        after = set(self.genres[fp])
+        if action == "move" and kind == "genre":
+            after.discard(folder)
+        after.add(to_name)
+        if len(after) > 1:
+            raise ValueError(f"{source}: would be in genres {', '.join(sorted(after))}; "
+                             "a song keeps one genre (move it from its genre folder to change genre)")
+        self.genres[fp] = after
+
+    @staticmethod
+    def _rename(item, source, kind, action):
+        """(file name, tags) for the destination: edited in the Inbox, the file gets the new name and tags."""
+        file_name = Path(source).name
         if ("title" in item or "artist" in item) and kind == "inbox" and action == "move":
-            # Edited in the Inbox: the file gets the new name and tags as it moves.
             artist, title = (item.get("artist") or "").strip(), (item.get("title") or "").strip()
             if not title:
-                plan.problems.append(f"{source}: the title cannot be empty")
-                continue
-            file_name = track_file_name(artist, title, Path(source).suffix) or file_name
-            tags = {"artist": artist or None, "title": title}
+                raise ValueError(f"{source}: the title cannot be empty")
+            return (track_file_name(artist, title, Path(source).suffix) or file_name,
+                    {"artist": artist or None, "title": title})
+        return file_name, {}
+
+    def _add(self, item):
+        source, to, action, to_kind, to_name = self._parse(item)
+        if action == "move" and source in self.located:
+            raise ValueError(f"{source}: moved twice in one plan; list one move per file")
+        current = self.located.get(source, source)
+        kind, folder = classify(Path(current))
+        fp = self.fp_of[source]
+        self._check_move_out(source, kind, action, to_kind)
+        existing = [c["path"] for c in self.songs[fp]
+                    if str(Path(c["path"]).parent) == to and c["path"] not in self.gone]
+        if existing or (to, fp) in self.planned:
+            self.plan.steps.append(Step("skip", str(self.root / current), "",
+                                        f"already there: {existing[0] if existing else self.planned[(to, fp)]}"))
+            return
+        self._check_genre(source, fp, kind, folder, action, to_kind, to_name)
+        file_name, tags = self._rename(item, source, kind, action)
         dest = str(Path(to) / file_name)
-        if ((root / dest).exists() and dest not in gone) or dest in planned.values():
-            plan.problems.append(f"{source}: a different file named {Path(dest).name!r} already exists in {to}")
-            continue
-        planned[(to, fp)] = dest
+        if ((self.root / dest).exists() and dest not in self.gone) or dest in self.planned.values():
+            raise ValueError(f"{source}: a different file named {Path(dest).name!r} already exists in {to}")
+        self.planned[(to, fp)] = dest
         if action == "move":
-            located[source] = dest
-            gone.add(current)
+            self.located[source] = dest
+            self.gone.add(current)
         if kind == "genre" and action == "move":
-            plan.notes.append(f"{source}: if Rekordbox already imported it, re-link it after the move")
-        plan.steps.append(Step(action, str(root / current), str(root / dest), tags=tags))
-    return plan
+            self.plan.notes.append(f"{source}: if Rekordbox already imported it, re-link it after the move")
+        self.plan.steps.append(Step(action, str(self.root / current), str(self.root / dest), tags=tags))
 
 
 def plan_remove(root, trash, tracks, paths, when=None):
@@ -374,6 +399,39 @@ def _same_audio(path, candidates):
     return [t["path"] for t in candidates if audio_hash(t["abs"]) == wanted]
 
 
+def _check_download(sources, raw, to, signatures, seen):
+    """The resolved path of a download picked for `to`, or ValueError / OSError saying what is wrong."""
+    path = _inside_sources(sources, raw)
+    if not path.is_file() or path.suffix.lower() not in AUDIO:
+        raise ValueError(f"missing or not an audio file: {raw}")
+    if to == INBOX and path.suffix.lower() != ".mp3":
+        raise ValueError(f"only MP3 files go to {INBOX}: {raw}")
+    if str(path) in seen:
+        raise ValueError(f"listed twice: {raw}")
+    signature = signatures.get(raw)
+    stat = path.stat()
+    if signature and [str(stat.st_size), str(stat.st_mtime_ns)] != [str(v) for v in signature]:
+        raise ValueError(f"changed since the review (review it again): {raw}")
+    return path
+
+
+def _intake_notes(path, by_fp, by_name):
+    """What the library already has of a download going to the Inbox (a note, never a block)."""
+    fp = quick_fingerprint(path)
+    if fp in by_fp:
+        return [f"the same file is already in the library: {by_fp[fp]}"]
+    info = describe_file(path)
+    candidates = by_name.get((normalize(info["artist"]), normalize(info["title"])), [])
+    same = _same_audio(path, candidates)   # a re-tagged library copy has another fingerprint, not other audio
+    other = [t["path"] for t in candidates if t["path"] not in same]
+    notes = []
+    if same:
+        notes.append(f"the same audio is already in the library: {', '.join(same)}")
+    if other:
+        notes.append(f"possible upgrade of {', '.join(other)}")
+    return notes
+
+
 def plan_intake(root, sources, tracks, picks):
     """Reviewed downloads: the kept version to 00 Inbox, the others to 00 Rejected/<song>.
 
@@ -402,17 +460,7 @@ def plan_intake(root, sources, tracks, picks):
         own_dests, own_seen = set(), set()
         for raw, to in entries:
             try:
-                path = _inside_sources(sources, raw)
-                if not path.is_file() or path.suffix.lower() not in AUDIO:
-                    raise ValueError(f"missing or not an audio file: {raw}")
-                if to == INBOX and path.suffix.lower() != ".mp3":
-                    raise ValueError(f"only MP3 files go to {INBOX}: {raw}")
-                if str(path) in seen or str(path) in own_seen:
-                    raise ValueError(f"listed twice: {raw}")
-                signature = signatures.get(raw)
-                stat = path.stat()
-                if signature and [str(stat.st_size), str(stat.st_mtime_ns)] != [str(v) for v in signature]:
-                    raise ValueError(f"changed since the review (review it again): {raw}")
+                path = _check_download(sources, raw, to, signatures, seen | own_seen)
             except (ValueError, OSError) as error:
                 own_problems.append(str(error))
                 continue
@@ -438,19 +486,7 @@ def plan_intake(root, sources, tracks, picks):
             taken.add(str(Path(step.dest).relative_to(root)).casefold())
             seen.add(step.source)
             if step.label == "inbox":
-                path = Path(step.source)
-                fp = quick_fingerprint(path)
-                if fp in by_fp:
-                    plan.notes.append(f"{song}: the same file is already in the library: {by_fp[fp]}")
-                else:
-                    info = describe_file(path)
-                    key = (normalize(info["artist"]), normalize(info["title"]))
-                    same = _same_audio(path, by_name.get(key, []))
-                    other = [t["path"] for t in by_name.get(key, []) if t["path"] not in same]
-                    if same:   # the library copy was re-tagged, so its fingerprint differs; the audio does not
-                        plan.notes.append(f"{song}: the same audio is already in the library: {', '.join(same)}")
-                    if other:
-                        plan.notes.append(f"{song}: possible upgrade of {', '.join(other)}")
+                plan.notes += [f"{song}: {note}" for note in _intake_notes(Path(step.source), by_fp, by_name)]
         plan.steps += own_steps
     return plan
 
