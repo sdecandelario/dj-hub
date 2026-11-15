@@ -172,3 +172,22 @@ def test_models_and_migrations_agree(env):
     with engine().connect() as connection:
         context = MigrationContext.configure(connection, opts={"compare_type": False})
         assert compare_metadata(context, Base.metadata) == []
+
+
+def test_batched_lookups_match_the_single_ones(env):
+    from app.models import File, Measurement
+    from app.services import analysis
+
+    with session_scope() as s:
+        s.add(File(path="/x/a.mp3", area="download", size=5, mtime_ns="7", sha256="aaa"))
+        s.add(File(path="/x/b.mp3", area="download", size=5, mtime_ns="7", sha256="bbb"))
+        s.add(Measurement(path="/x/a.mp3", sha256="aaa", status="OK", full=True, extra={"ffmpeg_version": "v1"}))
+        s.add(Measurement(path="/x/b.mp3", sha256="bbb", status="OK", full=True, extra={"ffmpeg_version": "v2"}))
+    items = [{"path": "/x/a.mp3", "size": 5, "mtime_ns": "7"}, {"path": "/x/b.mp3", "size": 6, "mtime_ns": "7"},
+             {"path": "/x/none.mp3", "size": 1, "mtime_ns": "1"}]
+    with session_scope() as s:
+        analysis.cached_shas(s, items)
+        assert [i["sha256"] for i in items] == ["aaa", None, None]   # b changed size, none is unknown
+        found = analysis.reusable_many(s, ["aaa", "bbb", None], True, "v1")
+        assert set(found) == {"aaa"}   # bbb was measured with another ffmpeg
+        assert found["aaa"].id == analysis.reusable(s, "aaa", True, "v1").id

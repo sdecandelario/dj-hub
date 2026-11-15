@@ -56,3 +56,17 @@ class MatchingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_artist_prefilter_gives_the_same_matches_as_a_full_scan():
+    from app.core import matching
+
+    names = [("Soft Cell", "Tainted Love"), ("Depeche Mode", "Personal Jesus"), ("", "Untitled Groove"),
+             ("Boy Harsher", "Pain"), ("The Cure", "A Forest"), ("Cold Cave", "Love Comes Close")]
+    library = [local(a, t) for a, t in names]
+    index = matching.build_index(library)
+    plain = dict(index)   # no artist index: every local track is scanned
+    for artist, title in [("Soft Cell", "Tainted Lov"), ("Depeche Mode", "Personal Jesu"), ("Boy Harsher", "Pains"),
+                          ("Cure", "A Forrest"), ("Someone", "Untitled Grove"), ("Cold Cave", "Love Comes Closer")]:
+        track = spotify([artist], title)
+        assert matching.match_track(track, library, index) == matching.match_track(track, library, plain)

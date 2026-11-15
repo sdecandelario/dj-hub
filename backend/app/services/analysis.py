@@ -45,6 +45,35 @@ def cached_sha(session, path, stat):
     return None
 
 
+def cached_shas(session, items):
+    """Fill item["sha256"] from the stored hashes in one pass: only for files whose size and
+    modification time still match what was hashed. `items` need path, size and mtime_ns."""
+    stored = {}
+    paths = [i["path"] for i in items]
+    for start in range(0, len(paths), 500):
+        for row in session.scalars(select(File).where(File.path.in_(paths[start:start + 500]))).all():
+            stored[row.path] = row
+    for item in items:
+        row = stored.get(item["path"])
+        ok = row and row.sha256 and row.size == item["size"] and row.mtime_ns == str(item["mtime_ns"])
+        item["sha256"] = row.sha256 if ok else None
+
+
+def reusable_many(session, shas, full, ffmpeg_version):
+    """{sha: newest good measurement of those bytes with this ffmpeg (or an unknown one)} in few queries.
+    Same rule as `reusable` for a single hash (without `deep`)."""
+    found = {}
+    shas = sorted({s for s in shas if s})
+    for start in range(0, len(shas), 500):
+        query = select(Measurement).where(Measurement.sha256.in_(shas[start:start + 500]), Measurement.status == "OK")
+        if full:
+            query = query.where(Measurement.full.is_(True))
+        for m in session.scalars(query.order_by(Measurement.id.desc())).all():
+            if m.sha256 not in found and (m.extra or {}).get("ffmpeg_version") in (None, ffmpeg_version):
+                found[m.sha256] = m
+    return found
+
+
 def reusable(session, sha, full, ffmpeg_version, deep=False):
     """A previous good measurement of the same bytes with the same ffmpeg. With deep=True, only one
     that also has the loud-section and tonal-balance checks (older ones are measured again)."""
@@ -194,13 +223,15 @@ def runs(session, with_tracks=True):
     """Analysis runs oldest first, in the shape core.history expects."""
     jobs = session.scalars(select(Job).where(Job.type == "analyze", Job.status.in_(
         ("done", "cancelled", "interrupted", "failed", "running"))).order_by(Job.created_at, Job.id)).all()
+    by_job = {}
+    if with_tracks and jobs:   # one query for every run, not one per run
+        for m in session.scalars(select(Measurement).where(Measurement.job_id.in_([j.id for j in jobs]))
+                                 .order_by(Measurement.path)).all():
+            by_job.setdefault(m.job_id, []).append(measurement_row(m))
     out = []
     for job in jobs:
         summary = job.summary or {}
-        tracks = []
-        if with_tracks:
-            tracks = [measurement_row(m) for m in session.scalars(
-                select(Measurement).where(Measurement.job_id == job.id).order_by(Measurement.path)).all()]
+        tracks = by_job.get(job.id, [])
         out.append({
             "id": job.id, "label": job.legacy_id or job.created_at.strftime("%Y-%m-%d %H:%M"),
             "scope": summary.get("scope", "file"), "complete": bool(summary.get("complete")),

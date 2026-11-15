@@ -73,9 +73,20 @@ def artist_tokens(text):
     return {w for w in text.split() if (len(w) > 1 or w.isdigit()) and w not in ARTIST_STOPWORDS}
 
 
+class Index(dict):
+    """Title core -> local tracks, plus which tracks share an artist word (to skip most of the library
+    when looking for similar titles)."""
+
+    def __init__(self):
+        super().__init__()
+        self.by_artist = {}
+        self.no_artist = []
+
+
 def build_index(library):
-    index = {}
-    for track in library:
+    index = Index()
+    for position, track in enumerate(library):
+        track["_pos"] = position
         keys = set()
         for title in (track["title"], track["filename_title"]):
             core, descriptor = split_title(title)
@@ -85,9 +96,23 @@ def build_index(library):
         track["_cores"] = keys
         track["_artists"] = artist_tokens(track["artist"]) | artist_tokens(track["filename_artist"])
         track["_haystack"] = normalize(track["relative_path"])
+        for word in track["_artists"]:
+            index.by_artist.setdefault(word, []).append(track)
+        if not track["_artists"]:
+            index.no_artist.append(track)
         for key in keys:
             index.setdefault(key, []).append(track)
     return index
+
+
+def _similar_candidates(wanted_artists, library, index):
+    """Local tracks that could pass `artists_agree`, in library order: those sharing an artist word, and
+    those with no artist info (checked against the path). Falls back to everything for a plain dict index."""
+    if not isinstance(index, Index):
+        return library
+    found = {id(t): t for word in wanted_artists for t in index.by_artist.get(word, [])}
+    found.update({id(t): t for t in index.no_artist})
+    return sorted(found.values(), key=lambda t: t["_pos"])
 
 
 def match_track(spotify_track, library, index):
@@ -116,14 +141,17 @@ def match_track(spotify_track, library, index):
                 best_note = "Same title, different artist and version"
 
     if best_score < 1.0 and core and len(core) >= 3:
-        for local in library:
+        for local in _similar_candidates(wanted_artists, library, index):
             for local_core in local["_cores"]:
                 if local_core == core:
                     continue
                 if not artists_agree(local):
                     continue
-                ratio = difflib.SequenceMatcher(None, core, local_core).ratio()
                 contained = min(len(core), len(local_core)) >= 8 and (core in local_core or local_core in core)
+                matcher = difflib.SequenceMatcher(None, core, local_core)
+                if not contained and matcher.quick_ratio() < 0.85:   # an upper bound: it cannot reach 0.8 after the penalty
+                    continue
+                ratio = matcher.ratio()
                 score = max(ratio, 0.86 if contained else 0) - 0.05
                 if score > best_score and score >= 0.8:
                     best, best_score, best_note = local, score, "Similar title"
