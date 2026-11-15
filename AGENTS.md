@@ -29,9 +29,9 @@ Audio analysis is read-only. Never modify music files, tags, or the Rekordbox li
 
 ## DJ projects
 
-The user plays in three DJ projects. When suggesting tracks, reviewing a playlist, or sorting missing tracks, say which project(s) a track fits. A track can fit more than one project. If a track fits none, say so instead of forcing it.
+The user plays in three DJ projects. When suggesting tracks, reviewing a playlist, or sorting missing tracks, say which project(s) a track fits (Juventudes Gilderianas excluded, see below). A track can fit more than one project. If a track fits none, say so instead of forcing it.
 
-The profiles below come from the reference playlists listed with each project (full playlists read through the Spotify API, November 2026). Treat them as guidance, not strict rules, and update them when the playlists change.
+The profiles below come from the reference playlists listed with each project, read through the Spotify API. Treat them as guidance, not strict rules, and update them when the playlists change.
 
 ### 1. Serge Candel (solo)
 
@@ -41,10 +41,10 @@ Reference playlists:
 
 | Playlist | Spotify ID | Focus |
 | --- | --- | --- |
-| Serge Candel | `3PuCqjzr4B2fWcsd2SGKp7` | Core sound of the project (75 tracks) |
-| Feel the darkness | `1U0L91CdWLM5HNz5gIITqr` | International dark: post-punk, goth, EBM, industrial (482 tracks) |
-| Spanish darkness | `0y8lq7C5y2vtmOxSSAuwzp` | Spanish-language dark wave, old and new (102 tracks) |
-| Keep it warm | `2K52sYJ72EQ8VT5sk49m2k` | Warm-up: italo disco, hi-NRG, 80s synth-pop (49 tracks) |
+| Serge Candel | `3PuCqjzr4B2fWcsd2SGKp7` | Core sound of the project |
+| Feel the darkness | `1U0L91CdWLM5HNz5gIITqr` | International dark: post-punk, goth, EBM, industrial |
+| Spanish darkness | `0y8lq7C5y2vtmOxSSAuwzp` | Spanish-language dark wave, old and new |
+| Keep it warm | `2K52sYJ72EQ8VT5sk49m2k` | Warm-up: italo disco, hi-NRG, 80s synth-pop |
 
 Reference artists:
 
@@ -59,25 +59,15 @@ Fits: minor keys, cold synths, deep vocals, mechanical 4/4 or motorik beats, rou
 
 Does not fit: mainstream pop, rumba, reggae, party anthems with no dark edge.
 
-### 2. Juventudes Gilderianas (in progress)
+### 2. Juventudes Gilderianas
 
-A shared project whose style is still being defined. So far it is mostly electronic with some post-punk. There is no reference playlist yet.
-
-Working proposal, built from the tracks in the other playlists that fall between electronic and post-punk:
-
-- Electroclash and French touch: Vitalic, Miss Kittin, The Hacker, Gesaffelstein, Soulwax, Justice, Digitalism, Boys Noize, Simian Mobile Disco, Crystal Castles.
-- Dance-punk: LCD Soundsystem, Death From Above 1979, Sextile, Marie Davidson.
-- Danceable post-punk and synth-pop: Boy Harsher, Cold Cave, TR/ST, Molchat Doma, Human Tetris, New Order, Depeche Mode.
-- Italo disco and nu-disco: Mind Enterprises, Todd Terje, Whodamanny, Lewis OfMan, Fred Ventura, Clio.
-- Club electronic with warmth: Caribou, Disclosure, Groove Armada.
-
-Until there is a reference playlist, mark suggestions for this project as provisional, and ask the user before treating this proposal as settled. Rewrite this section when the user picks a direction.
+A shared project with no defined music line yet: it has no reference playlist and no profile. Do not suggest tracks for it or name it as a fit; only the other two projects get that treatment. When the user defines its sound, add a profile here.
 
 ### 3. Perry Boys
 
 A shared project focused on a New Year's Eve party. The goal is a full dance floor: electronic music, rumba, and petardeo (Spanish slang for over-the-top, sing-along party hits).
 
-Reference playlist: Perry Boys, Spotify ID `1FURH6wFT0gwsbOZpMWSy3` (316 tracks, very varied: 266 different artists).
+Reference playlist: Perry Boys, Spotify ID `1FURH6wFT0gwsbOZpMWSy3`. Very varied, with little artist repetition.
 
 Reference artists:
 
