@@ -1,4 +1,4 @@
-"""One ID3 reader for the whole app (merged from djlib.read_tags and check_playlists.read_id3)."""
+"""ID3 tags: one reader for the whole app, and the writer used by tag batches."""
 import os
 import re
 import struct

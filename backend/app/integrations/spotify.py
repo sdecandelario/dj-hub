@@ -1,4 +1,4 @@
-"""Read Spotify playlists (ported from check_playlists.py).
+"""Read Spotify playlists.
 
 With SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET and a saved login, the Web API reads
 full playlists. Otherwise the public embed page is used (first 100 tracks only).
@@ -21,7 +21,7 @@ from pathlib import Path
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback"   # terminal login (djhub spotify-login)
 APP_REDIRECT_URI = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8000/api/spotify/callback")
 SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative"
-TOKEN_PATH = Path.home() / ".config" / "dj_playlist_checker" / "spotify_token.json"
+TOKEN_PATH = Path.home() / ".config" / "dj-hub" / "spotify_token.json"
 LOGIN_TIMEOUT_SECONDS = 300
 MAX_RETRY_WAIT_SECONDS = 30
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) DJHub/1.0"

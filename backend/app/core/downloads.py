@@ -1,4 +1,4 @@
-"""Group downloaded versions of the same song and rank them (ported from review_downloads.py)."""
+"""Group downloaded versions of the same song and rank them."""
 import difflib
 import hashlib
 import re

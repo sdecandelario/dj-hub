@@ -1,6 +1,6 @@
 # DJ Hub
 
-One local app for the DJ library in `~/Documents/DJ Tracks`. It replaces `DJ_Playlist_Checker`, `DJ_Loudness_Analyzer` and the file logic of the old dj-library script.
+One local app for the DJ library in `~/Documents/DJ Tracks`: Spotify playlists against the library, downloads review, new-song discovery, loudness analysis and every file change (always previewed, undoable).
 
 - **Playlists**: which tracks of your Spotify playlists are missing, need a check (other version, similar title), or are already in the library. Each track shows its DJ project, and whether a matching download is waiting.
 - **Downloads**: measures new files in the Nicotine and `~/Downloads` folders, groups the versions of each song, flags transcodes, decode errors, other edits and compilations, and suggests the best one. You listen, pick, and move: the kept version goes to `00 Inbox`, the others to `00 Rejected/<song>`.
@@ -27,7 +27,7 @@ Without keys, the public embed page is read (first 100 tracks per playlist). For
 
 1. In your app at https://developer.spotify.com/dashboard add the redirect URI `http://127.0.0.1:8000/api/spotify/callback`.
 2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zprofile`).
-3. Settings → **Connect Spotify**. The login is saved in `~/.config/dj_playlist_checker/spotify_token.json` (the same file the old checker used, so an existing login keeps working).
+3. Settings → **Connect Spotify**. The login is saved in `~/.config/dj-hub/spotify_token.json`.
 
 ## Last.fm
 
@@ -73,7 +73,7 @@ make lint               # ruff (backend), oxlint and knip (frontend: unused file
 make migration m="..."  # after changing backend/app/models.py
 ```
 
-- `backend/app/core`: logic ported from the old scripts (tags, names, audio, library rules, download ranking, matching).
+- `backend/app/core`: tags, names, audio, library rules, download ranking and matching (no database or web code).
 - `backend/app/integrations`: the Spotify and Last.fm clients (network, login file, env vars).
 - `backend/app/services`: use cases (library batches, analysis, downloads review, playlists).
 - `backend/app/api`: HTTP routes under `/api`. `backend/app/jobs.py`: background jobs with progress.

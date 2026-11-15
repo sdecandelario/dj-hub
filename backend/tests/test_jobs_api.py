@@ -1,5 +1,6 @@
 """Job runner robustness and the API's safety checks."""
 import os
+from pathlib import Path
 
 import pytest
 
@@ -287,30 +288,40 @@ def test_a_move_keeps_the_file_row_and_its_loudness_shows_in_the_table(client, e
 
 def test_dropping_a_column_keeps_the_rows_that_point_at_the_table(tmp_path):
     """SQLite rebuilds the table to drop a column; with foreign keys on that would wipe or clear the
-    rows of tables that refer to it (file ops of a batch, the job of a review)."""
-    from pathlib import Path
-
+    rows of tables that refer to it. The migration environment must run with them off."""
     import sqlalchemy as sa
     from alembic import command
     from alembic.config import Config
 
+    scripts = tmp_path / "migrations"
+    (scripts / "versions").mkdir(parents=True)
+    real_env = Path(__file__).parents[1] / "app" / "migrations"
+    (scripts / "env.py").write_text((real_env / "env.py").read_text(), encoding="utf-8")
+    (scripts / "script.py.mako").write_text((real_env / "script.py.mako").read_text(), encoding="utf-8")
+    (scripts / "versions" / "r1.py").write_text(
+        "import sqlalchemy as sa\nfrom alembic import op\nrevision = 'r1'\ndown_revision = None\n"
+        "def upgrade():\n"
+        "    op.create_table('parents', sa.Column('id', sa.Integer(), primary_key=True),\n"
+        "                    sa.Column('old', sa.String(), unique=True))\n"
+        "    op.create_table('children', sa.Column('id', sa.Integer(), primary_key=True),\n"
+        "                    sa.Column('parent_id', sa.Integer(), sa.ForeignKey('parents.id', ondelete='CASCADE')))\n"
+        "def downgrade():\n    pass\n", encoding="utf-8")
+    (scripts / "versions" / "r2.py").write_text(
+        "from alembic import op\nrevision = 'r2'\ndown_revision = 'r1'\n"
+        "def upgrade():\n"
+        "    with op.batch_alter_table('parents') as batch_op:\n        batch_op.drop_column('old')\n"
+        "def downgrade():\n    pass\n", encoding="utf-8")
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}")
     sa.event.listen(engine, "connect", lambda c, _: c.execute("PRAGMA foreign_keys=ON"))
     cfg = Config()
-    cfg.set_main_option("script_location", str(Path(__file__).parents[1] / "app" / "migrations"))
+    cfg.set_main_option("script_location", str(scripts))
     cfg.set_main_option("sqlalchemy.url", str(engine.url))
     cfg.attributes["connection_engine"] = engine
-    command.upgrade(cfg, "9d2e3f5a7b8c")   # before the two columns were dropped
+    command.upgrade(cfg, "r1")
     with engine.begin() as c:
-        c.execute(sa.text("INSERT INTO jobs (id, type, params, status, done, total, message, log, summary, created_at)"
-                          " VALUES (1, 'review_downloads', '{}', 'done', 0, 0, '', '', '{}', '2026-11-01')"))
-        c.execute(sa.text("INSERT INTO reviews (id, job_id, created_at, payload) VALUES (1, 1, '2026-11-01', '{}')"))
-        c.execute(sa.text("INSERT INTO batches (id, kind, status, label, request, plan, error, created_at, legacy_id)"
-                          " VALUES (1, 'legacy', 'applied', 'old', '{}', '{}', '', '2026-11-01', 'x')"))
-        c.execute(sa.text("INSERT INTO file_ops (batch_id, seq, action, label, source, dest) VALUES (1, 1, 'move', '', 'a', 'b')"))
-    command.upgrade(cfg, "head")
+        c.execute(sa.text("INSERT INTO parents (id, old) VALUES (1, 'x')"))
+        c.execute(sa.text("INSERT INTO children (id, parent_id) VALUES (1, 1)"))
+    command.upgrade(cfg, "r2")
     with engine.connect() as c:
-        assert c.execute(sa.text("SELECT count(*) FROM file_ops")).scalar() == 1
-        assert c.execute(sa.text("SELECT job_id FROM reviews")).scalar() == 1
-        assert c.execute(sa.text("SELECT kind FROM batches")).scalar() == "apply"
-        assert "legacy_id" not in [r[1] for r in c.execute(sa.text("PRAGMA table_info(batches)"))]
+        assert c.execute(sa.text("SELECT count(*) FROM children")).scalar() == 1   # the cascade did not run
+        assert "old" not in [r[1] for r in c.execute(sa.text("PRAGMA table_info(parents)"))]

@@ -1,4 +1,4 @@
-"""Match Spotify tracks against local files (ported from check_playlists.py).
+"""Match Spotify tracks against local files.
 
 Statuses: 'have' (in the library), 'maybe' (check: other version, similar title or
 same title by another artist), 'missing'.

@@ -2,7 +2,7 @@
 
 Revision ID: 0001
 Revises: 
-Create Date: 2026-11-08 12:26:37.001437
+Create Date: 2026-11-15 19:41:12.786154
 """
 from alembic import op
 import sqlalchemy as sa
@@ -25,13 +25,32 @@ def upgrade():
     sa.Column('plan', sa.JSON(), nullable=False),
     sa.Column('error', sa.Text(), nullable=False),
     sa.Column('undoes_id', sa.Integer(), nullable=True),
-    sa.Column('legacy_id', sa.String(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('applied_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['undoes_id'], ['batches.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('legacy_id')
+    sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('candidates',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('key', sa.String(), nullable=False),
+    sa.Column('genre', sa.String(), nullable=False),
+    sa.Column('artist', sa.String(), nullable=False),
+    sa.Column('title', sa.String(), nullable=False),
+    sa.Column('status', sa.String(), nullable=False),
+    sa.Column('score', sa.Float(), nullable=False),
+    sa.Column('because', sa.JSON(), nullable=False),
+    sa.Column('you_own', sa.Integer(), nullable=False),
+    sa.Column('check', sa.JSON(), nullable=True),
+    sa.Column('source', sa.String(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
+    with op.batch_alter_table('candidates', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_candidates_genre'), ['genre'], unique=False)
+        batch_op.create_index(batch_op.f('ix_candidates_key'), ['key'], unique=True)
+        batch_op.create_index(batch_op.f('ix_candidates_status'), ['status'], unique=False)
+
     op.create_table('files',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('path', sa.String(), nullable=False),
@@ -69,15 +88,23 @@ def upgrade():
     sa.Column('message', sa.Text(), nullable=False),
     sa.Column('log', sa.Text(), nullable=False),
     sa.Column('summary', sa.JSON(), nullable=False),
-    sa.Column('legacy_id', sa.String(), nullable=True),
+    sa.Column('pid', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('started_at', sa.DateTime(), nullable=True),
     sa.Column('finished_at', sa.DateTime(), nullable=True),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('legacy_id')
+    sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('jobs', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_jobs_type'), ['type'], unique=False)
+
+    op.create_table('lastfm_cache',
+    sa.Column('key', sa.String(), nullable=False),
+    sa.Column('payload', sa.JSON(), nullable=False),
+    sa.Column('fetched_at', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('key')
+    )
+    with op.batch_alter_table('lastfm_cache', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_lastfm_cache_fetched_at'), ['fetched_at'], unique=False)
 
     op.create_table('marks',
     sa.Column('spotify_id', sa.String(), nullable=False),
@@ -133,6 +160,7 @@ def upgrade():
     sa.Column('label', sa.String(), nullable=False),
     sa.Column('source', sa.String(), nullable=False),
     sa.Column('dest', sa.String(), nullable=False),
+    sa.Column('tags_before', sa.JSON(), nullable=True),
     sa.ForeignKeyConstraint(['batch_id'], ['batches.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -216,6 +244,10 @@ def downgrade():
     op.drop_table('playlists')
     op.drop_table('matches')
     op.drop_table('marks')
+    with op.batch_alter_table('lastfm_cache', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_lastfm_cache_fetched_at'))
+
+    op.drop_table('lastfm_cache')
     with op.batch_alter_table('jobs', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_jobs_type'))
 
@@ -228,5 +260,11 @@ def downgrade():
         batch_op.drop_index(batch_op.f('ix_files_area'))
 
     op.drop_table('files')
+    with op.batch_alter_table('candidates', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_candidates_status'))
+        batch_op.drop_index(batch_op.f('ix_candidates_key'))
+        batch_op.drop_index(batch_op.f('ix_candidates_genre'))
+
+    op.drop_table('candidates')
     op.drop_table('batches')
     # ### end Alembic commands ###

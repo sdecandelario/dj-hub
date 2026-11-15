@@ -1,4 +1,4 @@
-"""The DJ library layout and every file change (ported from djlib.py).
+"""The DJ library layout and every file change.
 
 Layout under the library root:
   00 Inbox/                      chosen downloads, waiting for a genre

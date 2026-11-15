@@ -1,5 +1,14 @@
 # AGENTS.md
 
+## About this project
+
+DJ Hub is a personal tool: one user, one Mac, never in production and never shared. So:
+
+- Prefer the simplest, cleanest design. Refactor, rename and restructure freely when it makes the code better; there is no one to stay compatible with. No compatibility shims, deprecated paths, old formats or "just in case" options.
+- Delete dead code and unused features (`make lint` runs ruff, oxlint and knip to find them).
+- The app database (`~/.local/share/dj-hub/dj-hub.db`) is personal history, not precious: schema changes may be breaking, migrations may be squashed, and it may be deleted and rebuilt (scan the library and refresh the playlists). Keeping backups of it is not needed.
+- This freedom does not cover the music: the library in `~/Documents/DJ Tracks` and the Rekordbox library are irreplaceable, so the rules below stay exactly as they are. The same goes for secrets (Spotify keys and login, `LASTFM_API_KEY`).
+
 ## Rules
 
 Use English for all project documentation, code identifiers, comments, filenames, schema fields, CLI messages, and UI text. Preserve original track titles, artist names, source paths, and historical provenance verbatim.
@@ -8,14 +17,14 @@ Audio analysis is read-only. Never modify music files, tags, or the Rekordbox li
 
 ## Working in this project
 
-- Safe to run without asking: `make test`, `uv run --project backend pytest`, `npm --prefix frontend run build`.
+- Safe to run without asking: `make test`, `make lint`, `uv run --project backend pytest`, `npm --prefix frontend run build`.
 - Tests use temporary folders and databases (`backend/tests/conftest.py`); never point tests at the real library.
 - Ask before running anything that applies a batch (`djhub ... --apply`, `POST /api/batches/{id}/apply`) on the real library.
 - Ask before refreshing Spotify playlists: it calls Spotify and rewrites the stored playlists.
 - `djhub discover` is read-only but calls Last.fm (`LASTFM_API_KEY` env var, never print it). Candidates come from Last.fm data; only the fit review against the projects below is done by Claude.
-- Never read or print `~/.zprofile` or `~/.config/dj_playlist_checker/spotify_token.json`. They hold the Spotify keys and login.
-- The database is `~/.local/share/dj-hub/dj-hub.db` (override with `DJ_HUB_DB`). Schema changes need an Alembic migration: `make migration m="..."`.
-- Layout: `backend/app/core` is logic ported from the old scripts (keep it free of database and web code); `integrations` holds the Spotify and Last.fm clients (network, login file, env vars); `services` are the use cases; `api` the HTTP routes; `cli.py` the `djhub` command used by the skills in `.claude/skills/` (`dj-library`, `dj-discover`). The skills live only there, so change a skill in the same commit as the command it calls. They load when Claude Code starts in this folder. `frontend/src/pages` has one file per page.
+- Never read or print `~/.zprofile` or `~/.config/dj-hub/spotify_token.json`. They hold the Spotify keys and login.
+- The database is `~/.local/share/dj-hub/dj-hub.db` (override with `DJ_HUB_DB`). Schema changes need an Alembic migration: `make migration m="..."` (migrations run with foreign keys off, see `backend/app/migrations/env.py`).
+- Layout: `backend/app/core` is the file, tag and matching logic (keep it free of database and web code); `integrations` holds the Spotify and Last.fm clients (network, login file, env vars); `services` are the use cases; `api` the HTTP routes; `cli.py` the `djhub` command used by the skills in `.claude/skills/` (`dj-library`, `dj-discover`). The skills live only there, so change a skill in the same commit as the command it calls. They load when Claude Code starts in this folder. `frontend/src/pages` has one file per page.
 - Artist names in the profiles below must match Spotify's spelling.
 
 ## DJ projects
