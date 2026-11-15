@@ -5,13 +5,13 @@ description: Organize the user's DJ music library in ~/Documents/DJ Tracks into 
 
 # DJ library
 
-The library lives in `~/Documents/DJ Tracks`. All file work goes through the DJ Hub app (`~/Projects/dj-hub`), whose `djhub` command has the same commands as the old `djlib.py`:
+The library lives in `~/Documents/DJ Tracks`. All file work goes through the DJ Hub app (`~/Projects/dj-hub`), whose `djhub` command does all the library work:
 
 ```sh
 uv run --project ~/Projects/dj-hub/backend djhub <command>
 ```
 
-Applied changes are stored as batches in the DJ Hub database, so they also show (and can be undone) on the app's History page. The user can do the same work in the web app (`make start` in `~/Projects/dj-hub`, then http://127.0.0.1:8000). `djlib.py` next to this file is the old version: do not use it. To find new songs for a genre folder, use the `dj-discover` skill.
+Applied changes are stored as batches in the DJ Hub database, so they also show (and can be undone) on the app's History page. The user can do the same work in the web app (`make start` in `~/Projects/dj-hub`, then http://127.0.0.1:8000). To find new songs for a genre folder, use the `dj-discover` skill.
 
 ## Layout and rules
 
