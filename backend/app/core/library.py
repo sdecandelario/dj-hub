@@ -207,6 +207,10 @@ class Plan:
         return {"kind": self.kind, "steps": [asdict(s) for s in self.steps],
                 "problems": self.problems, "notes": self.notes}
 
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["kind"], [Step(**s) for s in data["steps"]], data["problems"], data["notes"])
+
 
 def stamp():
     return dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -347,12 +351,12 @@ class _ApplyPlanner:
         self.plan.steps.append(Step(action, str(self.root / current), str(self.root / dest), tags=tags))
 
 
-def plan_remove(root, trash, tracks, paths, when=None):
+def plan_remove(root, trash, tracks, paths):
     """Send library copies (files or folders, relative to the root) to the Trash."""
     root, trash = Path(root), Path(trash)
     songs = by_song(tracks)
     fp_of = {t["path"]: t["fp"] for t in tracks}
-    trash_dir = trash / f"djhub-{when or stamp()}"
+    trash_dir = trash / f"djhub-{stamp()}"
     plan = Plan("remove")
     expanded = []
     for rel in paths:

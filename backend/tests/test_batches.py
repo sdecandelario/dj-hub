@@ -70,15 +70,16 @@ def test_remove_goes_to_trash_and_protects_the_only_genre_copy(env):
     assert (env.root / "Sessions" / "Party" / "Front 242 - Headhunter.mp3").exists()
 
 
-def test_stale_preview_is_refused(env):
+def test_apply_fails_before_touching_anything_when_a_file_vanished(env):
     song = fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
     batch = preview("apply", {"items": [{"source": "00 Inbox/Yazoo - Situation.mp3",
                                          "to": "Genres/Synth-Pop & New Wave", "action": "move"}]})
     song.unlink()
-    with pytest.raises(library.BatchError, match="changed since the preview"):
+    with pytest.raises(library.BatchError, match="missing"):
         library.apply(session_scope, batch)
     with session_scope() as s:
-        assert s.get(Batch, batch).status == "discarded"
+        assert s.get(Batch, batch).status == "failed"
+        assert s.query(FileOp).filter_by(batch_id=batch).count() == 0
 
 
 def test_intake_moves_keep_to_inbox_and_others_to_rejected(env):

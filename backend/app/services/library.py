@@ -86,11 +86,10 @@ def register_file(session, path, area):
 # --- Plans and batches ---------------------------------------------------------------
 
 
-def make_plan(session, kind, payload, when=None, tracks=None):
+def make_plan(session, kind, payload):
     """Plan without storing it (dry run). payload depends on kind:
     apply: {"items": [...]}, remove: {"paths": [...]}, intake: {"picks": [...]}, undo: {"batch_id": id}."""
     cfg = get_config()
-    when = when or lib.stamp()
     if kind == "undo":
         target = session.get(Batch, payload.get("batch_id"))
         if target is None:
@@ -103,11 +102,11 @@ def make_plan(session, kind, payload, when=None, tracks=None):
         return lib.plan_undo(cfg.root, cfg.trash, str(target.id),
                              [{"action": o.action, "source": o.source, "dest": o.dest,
                                "trash": o.label == "trash", "tags_before": o.tags_before} for o in ops])
-    tracks = scan(session) if tracks is None else tracks
+    tracks = scan(session)
     if kind == "apply":
         return lib.plan_apply(cfg.root, tracks, payload.get("items") or [])
     if kind == "remove":
-        return lib.plan_remove(cfg.root, cfg.trash, tracks, payload.get("paths") or [], when=when)
+        return lib.plan_remove(cfg.root, cfg.trash, tracks, payload.get("paths") or [])
     if kind == "rename":
         return lib.plan_rename(cfg.root, tracks, payload.get("items") or [])
     if kind == "tags":
@@ -119,10 +118,9 @@ def make_plan(session, kind, payload, when=None, tracks=None):
 
 def preview(session, kind, payload, label=""):
     """Plan a change and store it as a batch waiting for confirmation."""
-    when = lib.stamp()
-    plan = make_plan(session, kind, payload, when=when)
+    plan = make_plan(session, kind, payload)
     batch = Batch(kind=kind, status="preview", label=label or default_label(kind, plan),
-                  request={"payload": payload, "when": when}, plan=plan.to_dict(),
+                  request={"payload": payload}, plan=plan.to_dict(),
                   undoes_id=payload.get("batch_id") if kind == "undo" else None)
     session.add(batch)
     session.flush()
@@ -138,34 +136,23 @@ def default_label(kind, plan):
             "undo": "Undo"}.get(kind, kind) + f" ({detail})"
 
 
-def _step_keys(plan_dict):
-    return [(s["action"], s["source"], s["dest"]) for s in plan_dict["steps"] if s["action"] != "skip"]
-
-
 def apply(session_factory, batch_id):
-    """Run a previewed batch. The plan is computed again first; if the library changed
-    since the preview, nothing is done and the user is asked to preview again.
+    """Run a previewed batch exactly as it was shown. `lib.execute` checks the whole plan against the disk
+    first (every source exists, no destination is taken), so a library that changed since the preview
+    fails the batch before any file is touched.
 
     `session_factory` is a context manager giving a session (each step is logged in
     its own transaction, so a crash half way still leaves an accurate history)."""
     with _apply_lock:
-        refusal = None
         with session_factory() as session:
             batch = session.get(Batch, batch_id)
             if batch is None:
                 raise BatchError("Batch not found")
             if batch.status != "preview":
                 raise BatchError(f"Batch {batch.id} is already {batch.status}")
-            fresh = make_plan(session, batch.kind, batch.request["payload"], when=batch.request["when"])
-            if _step_keys(fresh.to_dict()) != _step_keys(batch.plan):
-                batch.status = "discarded"
-                batch.error = "The library changed since the preview"
-                refusal = "The files changed since the preview. Preview the change again."
-            else:
-                batch.status = "running"
-                batch.applied_at = now()
-        if refusal:
-            raise BatchError(refusal)
+            plan = lib.Plan.from_dict(batch.plan)
+            batch.status = "running"
+            batch.applied_at = now()
         state = {"seq": 0, "done": 0, "op": None}
         moved = set()
         warnings = []
@@ -191,7 +178,7 @@ def apply(session_factory, batch_id):
 
         error = ""
         try:
-            lib.execute(get_config().root, fresh, on_done=log, on_start=intend)
+            lib.execute(get_config().root, plan, on_done=log, on_start=intend)
         except Exception as exc:   # whatever went wrong, the batch must not stay "running"
             error = str(exc) or type(exc).__name__
             if state["op"] is not None:   # the step that failed: keep its row only if it really happened
@@ -203,9 +190,9 @@ def apply(session_factory, batch_id):
             if error:
                 batch.status = "partial" if seq[0] else "failed"
                 batch.error = error
-            elif batch.kind == "undo" and fresh.problems:
+            elif batch.kind == "undo" and plan.problems:
                 batch.status = "partial"
-                batch.error = "Not everything could be undone: " + "; ".join(fresh.problems[:3])
+                batch.error = "Not everything could be undone: " + "; ".join(plan.problems[:3])
             else:
                 batch.status = "applied"
             if batch.kind == "undo" and batch.status == "applied" and batch.undoes_id:
