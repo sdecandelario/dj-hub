@@ -166,7 +166,7 @@ def test_discover_job_stores_candidates_and_reports_errors(env, monkeypatch):
     from app.integrations import lastfm
     from app.jobs import runner
     from app.models import Job
-    monkeypatch.setattr(lastfm, "_http_fetch", fake_fetch)
+    monkeypatch.setattr(lastfm, "http_fetch", fake_fetch)
     monkeypatch.setenv("LASTFM_API_KEY", "k")
     with session_scope() as s:
         _seed_library(s)
@@ -185,3 +185,30 @@ def test_genres_endpoint_and_missing_genre(client, env):
     with session_scope() as s:
         _seed_library(s)
     assert client.get("/api/candidates/genres").json() == ["EBM & Industrial"]
+
+
+def test_lastfm_answers_are_cached_for_a_day_without_the_key(env):
+    import datetime as dt
+
+    from app.db import session_scope
+    from app.models import LastfmCache, now
+    from app.services.discovery import cached_fetch
+
+    calls = []
+
+    def fetch(params):
+        calls.append(params)
+        return {"error": 6, "message": "bad"} if params["artist"] == "bad" else {"ok": params["artist"]}
+
+    cached = cached_fetch(fetch)
+    params = {"method": "artist.getsimilar", "api_key": "SECRET", "artist": "DAF", "limit": 30}
+    assert cached(params) == {"ok": "DAF"} and cached({**params, "api_key": "OTHER"}) == {"ok": "DAF"}
+    assert len(calls) == 1   # the second call came from the cache, whatever the key
+    with session_scope() as s:
+        row = s.query(LastfmCache).one()
+        assert "SECRET" not in row.key and "SECRET" not in str(row.payload)
+        row.fetched_at = now() - dt.timedelta(days=2)   # a stale answer is fetched again
+    cached(params)
+    assert len(calls) == 2
+    cached({**params, "artist": "bad"}), cached({**params, "artist": "bad"})
+    assert len(calls) == 4   # errors are never cached

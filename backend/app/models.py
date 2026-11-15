@@ -195,3 +195,11 @@ class Candidate(Base):
     source: Mapped[str] = mapped_column(String, default="lastfm")
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     updated_at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
+class LastfmCache(Base):
+    """A Last.fm answer kept for a day, so asking again for the same artist does not call Last.fm."""
+    __tablename__ = "lastfm_cache"
+    key: Mapped[str] = mapped_column(String, primary_key=True)         # method and parameters, without the API key
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    fetched_at: Mapped[dt.datetime] = mapped_column(default=now, index=True)

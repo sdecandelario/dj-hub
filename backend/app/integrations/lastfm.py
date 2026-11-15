@@ -24,7 +24,7 @@ def api_key():
     return key
 
 
-def _http_fetch(params):
+def http_fetch(params):
     url = API_URL + "?" + urllib.parse.urlencode(params)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
@@ -43,7 +43,7 @@ def _as_list(value):
 class Lastfm:
     def __init__(self, key=None, fetch=None):
         self.key = key or api_key()
-        self.fetch = fetch or _http_fetch
+        self.fetch = fetch or http_fetch
 
     def _call(self, method, **params):
         data = self.fetch({"method": method, "api_key": self.key, "format": "json", **params})

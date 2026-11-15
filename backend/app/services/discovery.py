@@ -1,4 +1,5 @@
 """Discovery use case: new songs for one genre folder (read-only, never touches files)."""
+import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from ..core.library import GENRES
 from ..integrations import lastfm
 from ..db import session_scope
 from ..jobs import handler
-from ..models import Candidate, File, Playlist, PlaylistTrack, now
+from ..models import Candidate, File, LastfmCache, Playlist, PlaylistTrack, now
 from .playlists import library_entries
 
 
@@ -65,6 +66,33 @@ def _similar_for(client, seeds):
     return similar, used
 
 
+CACHE_DAYS = 1
+
+
+def cached_fetch(fetch=None, days=CACHE_DAYS):
+    """Wrap a Last.fm `fetch(params)` so an answer is reused for `days`. Only good answers are kept, and the
+    API key is not part of the cache key (nor of what is stored)."""
+    fetch = fetch or lastfm.http_fetch
+
+    def cached(params):
+        key = "|".join(f"{k}={str(v).lower()}" for k, v in sorted(params.items()) if k != "api_key")
+        fresh_after = now() - dt.timedelta(days=days)
+        with session_scope() as s:
+            row = s.get(LastfmCache, key)
+            if row is not None and row.fetched_at >= fresh_after:
+                return row.payload
+        data = fetch(params)
+        if "error" not in data:
+            with session_scope() as s:
+                row = s.get(LastfmCache, key)
+                if row is None:
+                    s.add(LastfmCache(key=key, payload=data, fetched_at=now()))
+                else:
+                    row.payload, row.fetched_at = data, now()
+        return data
+    return cached
+
+
 def discover(session, genre, client=None, seed_limit=15, artist_limit=20, tracks_per_artist=2):
     """Ranked candidates for a genre folder.
 
@@ -72,7 +100,7 @@ def discover(session, genre, client=None, seed_limit=15, artist_limit=20, tracks
     artists, and returns the top tracks of the best `artist_limit` artists that are not
     owned anywhere in the library.
     """
-    client = client or lastfm.Lastfm()
+    client = client or lastfm.Lastfm(fetch=cached_fetch())
     seeds = seeds_for(session, genre)
     top_seeds = dict(sorted(seeds.items(), key=lambda kv: (-kv[1], kv[0]))[:seed_limit])
     similar, top_seeds = _similar_for(client, top_seeds)
