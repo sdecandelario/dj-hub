@@ -48,6 +48,7 @@ class Job(Base):
     log: Mapped[str] = mapped_column(Text, default="")
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     legacy_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)   # process running it (CLI or server)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     started_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)

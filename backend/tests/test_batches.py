@@ -242,3 +242,112 @@ def test_move_from_inbox_rejects_empty_title(env):
     item = {"source": "00 Inbox/A - B.mp3", "to": "Genres/X", "action": "move", "artist": "A2", "title": " "}
     p = plan("apply", {"items": [item]})
     assert "title cannot be empty" in p.problems[0]
+
+
+def test_intake_refuses_two_rejects_with_the_same_name(env):
+    a = fake_audio(env.downloads / "a" / "Boy Harsher - Pain.mp3", b"a")
+    b = fake_audio(env.downloads / "b" / "Boy Harsher - Pain.mp3", b"b")
+    p = plan("intake", {"picks": [{"song": "Boy Harsher - Pain", "keep": None, "reject": [str(a), str(b)]}]})
+    assert not p.steps and any("already in" in x for x in p.problems)
+    p = plan("intake", {"picks": [{"song": "Boy Harsher - Pain", "keep": None, "reject": [str(a), str(a)]}]})
+    assert not p.steps and p.problems
+
+
+def test_remove_lists_each_file_once_and_keeps_one_genre_copy(env):
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3")
+    fake_audio(env.root / "Sessions" / "Party" / "DAF - Kebab.mp3")
+    p = plan("remove", {"paths": ["Sessions/Party/DAF - Kebab.mp3", "Sessions/Party"]})
+    assert len(p.steps) == 1
+    # Two genre copies of one song: both listed, only one may go.
+    one = env.root / "Genres" / "EBM & Industrial" / "Front 242 - Headhunter.mp3"
+    two = env.root / "Genres" / "Synth-Pop & New Wave" / "Front 242 - Headhunter.mp3"
+    fake_audio(one, b"h")
+    two.write_bytes(one.read_bytes())
+    p = plan("remove", {"paths": [str(one.relative_to(env.root)), str(two.relative_to(env.root))]})
+    assert len(p.steps) == 1 and "only genre copy" in p.problems[0]
+
+
+def test_execute_checks_everything_before_moving_anything(env):
+    from app.core import library as core
+
+    first = fake_audio(env.root / "00 Inbox" / "A - One.mp3", b"1")
+    second = fake_audio(env.root / "00 Inbox" / "B - Two.mp3", b"2")
+    taken = fake_audio(env.root / "Genres" / "EBM & Industrial" / "B - Two.mp3", b"3")
+    plan_ = core.Plan("apply", steps=[
+        core.Step("move", str(first), str(env.root / "Genres" / "EBM & Industrial" / first.name)),
+        core.Step("move", str(second), str(taken))])
+    with pytest.raises(FileExistsError):
+        core.execute(env.root, plan_)
+    assert first.exists() and second.exists()   # the first step did not run either
+
+
+def test_stuck_running_batch_is_recovered(env):
+    with session_scope() as s:
+        s.add(Batch(kind="apply", status="running", label="x", request={}, plan={"steps": []}))
+    with session_scope() as s:
+        assert library.recover_batches(s) == 1
+        assert s.query(Batch).one().status == "failed"
+
+
+def test_undo_with_problems_is_partial(env):
+    song = fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    other = fake_audio(env.root / "00 Inbox" / "B - Two.mp3")
+    items = [{"source": f"00 Inbox/{n}", "to": "Genres/EBM & Industrial", "action": "move"}
+             for n in (song.name, other.name)]
+    batch = preview("apply", {"items": items})
+    library.apply(session_scope, batch)
+    (env.root / "Genres" / "EBM & Industrial" / song.name).unlink()
+    undo = preview("undo", {"batch_id": batch})
+    result = library.apply(session_scope, undo)
+    assert result["status"] == "partial"
+    with session_scope() as s:
+        assert s.get(Batch, batch).status == "applied"   # not marked undone
+
+
+def test_rename_edge_cases(env):
+    from .conftest import real_audio
+    from app.core.tags import read_tags
+
+    real_audio(env.root / "00 Inbox" / "Some Band - Song.mp3", title="Song", artist="Some Band")
+    src = "00 Inbox/Some Band - Song.mp3"
+    p = plan("rename", {"items": [{"source": src, "artist": "Some Band", "title": "..."}]})
+    assert not p.problems   # a title that cleans to nothing keeps the file name instead of crashing
+    # No artist key: the artist tag is left alone.
+    batch = preview("rename", {"items": [{"source": src, "title": "New Song"}]})
+    library.apply(session_scope, batch)
+    new = next((env.root / "00 Inbox").glob("*New Song*"))
+    assert read_tags(new) == {"artist": "Some Band", "title": "New Song"}
+    # A case-only rename works.
+    batch = preview("rename", {"items": [{"source": "00 Inbox/" + new.name, "artist": "SOME BAND", "title": "New Song"}]})
+    library.apply(session_scope, batch)
+    assert read_tags(next((env.root / "00 Inbox").glob("*New Song*")))["artist"] == "SOME BAND"
+
+
+def test_write_tags_keeps_id3v24(env):
+    from mutagen.id3 import ID3, TIT2
+    from app.core.tags import write_tags
+    from .conftest import real_audio
+
+    path = real_audio(env.tmp / "x.mp3", title="x", artist="y")
+    tag = ID3(path)
+    tag.add(TIT2(encoding=3, text=["x"]))
+    tag.save(path, v2_version=4)
+    write_tags(path, {"title": "z"})
+    assert ID3(path).version[:2] == (2, 4)
+
+
+def test_scan_sync_clears_hash_when_file_changes(env):
+    from app.models import File
+    from sqlalchemy import select
+
+    song = fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    with session_scope() as s:
+        library.sync_library(s)
+        row = s.scalar(select(File).where(File.path == str(song)))
+        row.sha256 = "abc"
+    song.write_bytes(song.read_bytes()[:-1] + b"y")   # same size, different mtime
+    import os
+    os.utime(song, ns=(1, 1))
+    with session_scope() as s:
+        library.sync_library(s)
+        assert s.scalar(select(File).where(File.path == str(song))).sha256 is None

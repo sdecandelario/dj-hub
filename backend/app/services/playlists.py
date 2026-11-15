@@ -44,12 +44,17 @@ def run_refresh(ctx):
         ctx.progress(i - 1, len(ids), f"Reading {names.get(playlist_id, playlist_id)}")
         try:
             data = spotify.fetch_playlist(playlist_id, token)
-        except (urllib.error.URLError, RuntimeError, KeyError, ValueError) as error:
+        except (OSError, RuntimeError, KeyError, ValueError) as error:   # OSError covers URLError and timeouts
             ctx.log(f"{playlist_id}: failed ({error})")
             failed.append(playlist_id)
             continue
         with session_scope() as s:
             row = s.get(Playlist, playlist_id)
+            if token and data["source"] != "api" and row is not None and row.source == "api":
+                # The API failed and the embed page only has the first 100 tracks: keep the full copy.
+                ctx.log(f"{playlist_id}: the Spotify API failed; kept the stored full playlist")
+                failed.append(playlist_id)
+                continue
             if row is None:
                 row = Playlist(id=playlist_id, position=i)
                 s.add(row)

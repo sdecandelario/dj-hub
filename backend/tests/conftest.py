@@ -53,5 +53,5 @@ def real_audio(path, seconds=3, frequency=440, bitrate="320k", title=None, artis
 def client(env):
     from fastapi.testclient import TestClient
     from app.main import app
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://localhost") as c:
         yield c

@@ -20,7 +20,7 @@ class SettingsBody(BaseModel):
 
 
 @router.get("/settings")
-def get_settings(session=Depends(get_session)):
+def get_settings(session=Depends(get_session, scope="function")):
     cfg = get_config()
     return {"root": str(cfg.root), "trash": str(cfg.trash), "db": str(cfg.db_path),
             "sources": [str(p) for p in settings.sources(session)], "sources_locked": settings.sources_locked(),
@@ -29,24 +29,29 @@ def get_settings(session=Depends(get_session)):
 
 
 @router.put("/settings")
-def put_settings(body: SettingsBody, session=Depends(get_session)):
+def put_settings(body: SettingsBody, session=Depends(get_session, scope="function")):
     if body.sources is not None:
         if settings.sources_locked():
             raise HTTPException(400, "DJ_SOURCES is set in the environment; change it there")
-        bad = [p for p in body.sources if not Path(p).expanduser().is_absolute()]
+        paths = [Path(p.strip()).expanduser() for p in body.sources if p.strip()]
+        bad = [str(p) for p in paths if not p.is_absolute()]
         if bad:
             raise HTTPException(400, f"Use absolute paths: {', '.join(bad)}")
-        settings.put(session, "sources", [str(Path(p).expanduser()) for p in body.sources if p.strip()])
+        # Download folders are where files may be moved from, so they must be real, specific folders.
+        bad = [str(p) for p in paths if len(p.resolve().parts) < 3 or not p.is_dir()]
+        if bad:
+            raise HTTPException(400, f"Not an existing folder (and not a top-level one): {', '.join(bad)}")
+        settings.put(session, "sources", [str(p) for p in paths])
     return get_settings(session)
 
 
 @router.post("/settings/import-legacy")
-def import_legacy(session=Depends(get_session)):
+def import_legacy(session=Depends(get_session, scope="function")):
     return legacy.import_all(session)
 
 
 @router.get("/summary")
-def summary(session=Depends(get_session)):
+def summary(session=Depends(get_session, scope="function")):
     """Counts for the home page."""
     count = lambda *where: session.scalar(select(func.count()).select_from(File).where(*where))
     library = (File.area == "library", File.present.is_(True))

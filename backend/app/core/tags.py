@@ -78,7 +78,7 @@ FRAMES = {"artist": "TPE1", "title": "TIT2", "album": "TALB", "year": "TDRC", "g
 
 
 def write_tags(path, values, fill=None):
-    """Set ID3v2.3 text frames and return the values they had before ({key: old text or None}),
+    """Set ID3v2 text frames (v2.4 files stay v2.4, others become v2.3) and return the values they had before ({key: old text or None}),
     so the change can be undone. `values` overwrites; `fill` only sets keys that are empty.
     A value of None removes the frame. Audio data is not touched."""
     from mutagen import id3
@@ -106,5 +106,6 @@ def write_tags(path, values, fill=None):
         if value:
             tag.add(getattr(id3, FRAMES[key])(encoding=1, text=[str(value)]))
     if before:
-        tag.save(path, v2_version=3)
+        # Keep ID3v2.4 when the file already has it; anything older (or no tag) is written as v2.3.
+        tag.save(path, v2_version=4 if tag.version[:2] == (2, 4) else 3)
     return before

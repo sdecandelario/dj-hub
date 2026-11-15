@@ -47,8 +47,8 @@ def sync_library(session, tracks=None):
             row = File(path=t["abs"], area="library", first_seen=stamp)
             session.add(row)
             added += 1
-        if row.quick_fp != t["fp"] or row.size != t["size"] or row.mtime_ns != t["mtime_ns"]:
-            row.sha256 = None if row.quick_fp and row.quick_fp != t["fp"] else row.sha256
+        if row.quick_fp != t["fp"] or row.size != t["size"] or str(row.mtime_ns) != str(t["mtime_ns"]):
+            row.sha256 = None   # the file changed: a stored hash would describe the old bytes
         row.kind, row.folder, row.rel_path = t["kind"], t["folder"], t["path"]
         row.size, row.mtime_ns, row.quick_fp = t["size"], t["mtime_ns"], t["fp"]
         row.artist, row.title, row.genre_tag, row.bpm = t["artist"], t["title"], t["genre_tag"], t["bpm"]
@@ -172,14 +172,18 @@ def apply(session_factory, batch_id):
 
         error = ""
         try:
-            done = lib.execute(get_config().root, fresh, on_done=log)
-        except OSError as exc:
-            done, error = None, str(exc)
+            lib.execute(get_config().root, fresh, on_done=log)
+        except Exception as exc:   # whatever went wrong, the batch must not stay "running"
+            error = str(exc) or type(exc).__name__
+        # An undo that could not revert every step is not a finished undo.
         with session_factory() as session:
             batch = session.get(Batch, batch_id)
             if error:
                 batch.status = "partial" if seq[0] else "failed"
                 batch.error = error
+            elif batch.kind == "undo" and fresh.problems:
+                batch.status = "partial"
+                batch.error = "Not everything could be undone: " + "; ".join(fresh.problems[:3])
             else:
                 batch.status = "applied"
             if batch.kind == "undo" and batch.status == "applied" and batch.undoes_id:
@@ -200,6 +204,17 @@ def apply(session_factory, batch_id):
         if error and not seq[0]:
             raise BatchError(error)
         return result
+
+
+def recover_batches(session):
+    """Batches left 'running' by a crash: keep what was logged, so the history stays accurate
+    and whatever did move can still be undone."""
+    stuck = session.scalars(select(Batch).where(Batch.status == "running")).all()
+    for batch in stuck:
+        logged = session.scalar(select(func.count()).select_from(FileOp).where(FileOp.batch_id == batch.id))
+        batch.status = "partial" if logged else "failed"
+        batch.error = batch.error or "Interrupted before it finished"
+    return len(stuck)
 
 
 def discard(session, batch_id):
@@ -239,6 +254,7 @@ def run_scan(ctx):
     ctx.progress(0, 0, "Scanning the library")
     with session_scope() as s:
         counts = sync_library(s)
+    ctx.check()
     with session_scope() as s:
         matched = playlists.match_all(s) if s.scalar(select(func.count()).select_from(Playlist)) else None
     message = f"{counts['files']} files ({counts['added']} new, {counts['gone']} gone)"

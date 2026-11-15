@@ -12,6 +12,7 @@ a song keeps exactly one genre. Every change is planned first (`plan_*`),
 shown to the user, and only then run with `execute`.
 """
 import datetime as dt
+import os
 import re
 import shutil
 from dataclasses import asdict, dataclass, field
@@ -233,6 +234,14 @@ def _inside_root(root, rel):
     return path
 
 
+def _same_file(a, b):
+    """True when two paths are the same file (a case-only rename on a case-insensitive disk)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 def plan_apply(root, tracks, items):
     """Copies and moves inside the library.
 
@@ -325,16 +334,19 @@ def plan_remove(root, trash, tracks, paths, when=None):
             expanded.extend(inside or [rel])
         else:
             expanded.append(rel)
-    for rel in expanded:
+    removed = set()
+    for rel in dict.fromkeys(expanded):   # a file listed twice (or inside a listed folder) is planned once
         if rel not in fp_of:
             plan.problems.append(f"not a library audio file: {rel}")
             continue
         kind, _ = classify(Path(rel))
-        if kind == "genre" and len([c for c in songs[fp_of[rel]] if c["kind"] == "genre"]) < 2:
-            plan.problems.append(f"{rel}: this is the song's only genre copy; move it to another genre instead")
-            continue
         if kind == "genre":
+            left = [c for c in songs[fp_of[rel]] if c["kind"] == "genre" and c["path"] not in removed]
+            if len(left) < 2:
+                plan.problems.append(f"{rel}: this is the song's only genre copy; move it to another genre instead")
+                continue
             plan.notes.append(f"{rel}: if Rekordbox already imported it, it will show as missing")
+        removed.add(rel)
         plan.steps.append(Step("move", str(root / rel), str(trash_dir / rel), label="trash"))
     return plan
 
@@ -374,6 +386,7 @@ def plan_intake(root, sources, tracks, picks):
         entries = [(pick["keep"], INBOX)] if pick.get("keep") else []
         entries += [(r, f"{REJECTED}/{song_folder_name(song)}") for r in pick.get("reject") or []]
         own_steps, own_problems = [], []
+        own_dests, own_seen = set(), set()
         for raw, to in entries:
             try:
                 path = _inside_sources(sources, raw)
@@ -381,7 +394,7 @@ def plan_intake(root, sources, tracks, picks):
                     raise ValueError(f"missing or not an audio file: {raw}")
                 if to == INBOX and path.suffix.lower() != ".mp3":
                     raise ValueError(f"only MP3 files go to {INBOX}: {raw}")
-                if str(path) in seen:
+                if str(path) in seen or str(path) in own_seen:
                     raise ValueError(f"listed twice: {raw}")
                 signature = signatures.get(raw)
                 stat = path.stat()
@@ -394,9 +407,11 @@ def plan_intake(root, sources, tracks, picks):
             if to == INBOX and pick.get("title"):
                 name = track_file_name(pick.get("artist"), pick["title"], path.suffix) or name
             dest = f"{to}/{name}"
-            if (root / dest).exists() or dest in taken:
+            if (root / dest).exists() or dest.casefold() in taken or dest.casefold() in own_dests:
                 own_problems.append(f"{name}: a file with this name is already in {to}")
                 continue
+            own_dests.add(dest.casefold())
+            own_seen.add(str(path))
             tags, fill = {}, {}
             if to == INBOX and pick.get("title"):
                 tags = {"artist": pick.get("artist") or "", "title": pick["title"]}
@@ -407,7 +422,7 @@ def plan_intake(root, sources, tracks, picks):
             plan.problems += [f"{song or '(no song name)'}: {p} (song skipped)" for p in own_problems]
             continue
         for step in own_steps:
-            taken.add(str(Path(step.dest).relative_to(root)))
+            taken.add(str(Path(step.dest).relative_to(root)).casefold())
             seen.add(step.source)
             if step.label == "inbox":
                 path = Path(step.source)
@@ -436,24 +451,29 @@ def plan_rename(root, tracks, items):
     for item in items:
         source = item.get("source", "")
         track = known.get(source)
-        artist, title = (item.get("artist") or "").strip(), (item.get("title") or "").strip()
         if track is None or track["kind"] != "inbox":
             plan.problems.append(f"{source}: only files in 00 Inbox can be renamed here")
             continue
+        path = Path(track["abs"])
+        title = (item.get("title") or "").strip()
         if not title:
             plan.problems.append(f"{source}: the title cannot be empty")
             continue
-        path = Path(track["abs"])
-        name = track_file_name(artist, title, path.suffix)
+        has_artist = item.get("artist") is not None   # no artist key: keep the current artist tag
+        artist = (item["artist"] if has_artist else track["artist"] or "").strip()
+        name = track_file_name(artist, title, path.suffix) or path.name
         dest = path.with_name(name)
-        if (dest.exists() and dest != path) or str(dest) in taken:
+        clash = dest.exists() and dest != path and not _same_file(dest, path)
+        if clash or str(dest).casefold() in taken:
             plan.problems.append(f"{source}: a file named {name!r} already exists in 00 Inbox")
             continue
-        taken.add(str(dest))
-        tags = {"artist": artist or None, "title": title}
+        taken.add(str(dest).casefold())
+        tags = {"title": title}
+        if has_artist:
+            tags["artist"] = artist or None
         if dest == path:
             have = read_tags(path)
-            if have.get("artist", "") == artist and have.get("title", "") == title:
+            if have.get("title", "") == title and (not has_artist or have.get("artist", "") == artist):
                 continue
             plan.steps.append(Step("tags", str(path), str(path), tags=tags))
         else:
@@ -490,7 +510,7 @@ def plan_undo(root, trash, batch_label, ops):
         if not Path(step.source).exists():
             plan.problems.append(f"no longer there: {step.source}")
             continue
-        if Path(step.dest).exists():
+        if Path(step.dest).exists() and not _same_file(step.source, step.dest):
             plan.problems.append(f"something is already at {step.dest}")
             continue
         plan.steps.append(step)
@@ -545,9 +565,41 @@ def _remove_empty_dirs(root, folder):
         folder = folder.parent
 
 
+def _preflight(plan):
+    """Check the whole plan before touching anything, so a bad step cannot leave a half-done batch.
+    Steps may use a file an earlier step creates, so the check follows the plan in order."""
+    created, vanished, dests = set(), set(), set()
+    for step in plan.runnable():
+        if step.action == "tags":
+            continue
+        source, dest = step.source, step.dest
+        if source in vanished or (source not in created and not Path(source).exists()):
+            raise FileNotFoundError(f"missing: {source}")
+        key = dest.casefold()
+        if key in dests or (Path(dest).exists() and dest not in vanished
+                            and not (step.action == "move" and _same_file(source, dest))):
+            raise FileExistsError(f"refusing to overwrite {dest}")
+        dests.add(key)
+        created.add(dest)
+        if step.action == "move":
+            vanished.add(source)
+            created.discard(source)
+
+
+def _copy(source, dest):
+    """Copy to a temporary name and rename it, so a full disk never leaves a partial file at `dest`."""
+    temp = dest.with_name(f".{dest.name}.djhub-tmp")
+    try:
+        shutil.copy2(source, temp)
+        os.replace(temp, dest)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
 def execute(root, plan, on_done=None):
     """Run the plan's steps in order. `on_done(step)` is called after each one, so the
     caller can log progress even if a later step fails."""
+    _preflight(plan)
     done = []
     for step in plan.runnable():
         dest = Path(step.dest)
@@ -561,12 +613,16 @@ def execute(root, plan, on_done=None):
                 on_done(step)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.exists():
+        same = step.action == "move" and _same_file(step.source, dest)
+        if dest.exists() and not same:
             raise FileExistsError(f"refusing to overwrite {dest}")
         if step.action == "copy":
-            shutil.copy2(step.source, dest)
+            _copy(step.source, dest)
         else:
-            shutil.move(step.source, str(dest))
+            if same and step.source != step.dest:
+                os.rename(step.source, step.dest)
+            else:
+                shutil.move(step.source, str(dest))
             _remove_empty_dirs(root, Path(step.source).parent)
         if step.tags or step.fill_tags:
             try:
