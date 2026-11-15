@@ -233,3 +233,24 @@ def test_numeric_genre_references(tmp_path):
     assert read_tags(path) == {"genre": "Rock", "title": "T"}
     path.write_bytes(_id3(3, [("TCON", 0, text("(17)")), ("TIT2", 0, text("T"))]) + b"x" * 50)
     assert read_tags(path) == {"title": "T"}
+
+
+def test_moved_file_keeps_its_hash_and_first_seen(env):
+    from app.models import File
+    from app.services import library
+    from .conftest import fake_audio
+
+    song = fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    with session_scope() as s:
+        library.sync_library(s)
+        row = s.query(File).filter_by(path=str(song)).one()
+        row.sha256 = "abc"
+        first = row.first_seen
+    batch = None
+    with session_scope() as s:
+        batch = library.preview(s, "apply", {"items": [{"source": "00 Inbox/A - One.mp3",
+                                                        "to": "Genres/EBM & Industrial", "action": "move"}]}).id
+    library.apply(session_scope, batch)
+    with session_scope() as s:
+        moved = s.query(File).filter(File.path.like("%Genres%A - One.mp3")).one()
+        assert moved.sha256 == "abc" and moved.first_seen == first

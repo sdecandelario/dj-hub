@@ -41,14 +41,23 @@ def sync_library(session, tracks=None):
     existing = {r.path: r for r in session.scalars(select(File).where(File.area == "library")).all()}
     seen, added = set(), 0
     stamp = now()
+    # A moved file shows up as a new path. Rows whose path is gone still know its hash and first-seen date
+    # (a move keeps size and modification time), so the new row can take them over instead of starting empty.
+    listed = {t["abs"] for t in tracks}
+    left_behind = {(r.quick_fp, r.size, str(r.mtime_ns)): r for r in existing.values()
+                   if r.path not in listed and r.quick_fp}
     for t in tracks:
         row = existing.get(t["abs"])
+        previous = None
         if row is None:
             row = File(path=t["abs"], area="library", first_seen=stamp)
             session.add(row)
             added += 1
+            previous = left_behind.pop((t["fp"], t["size"], str(t["mtime_ns"])), None)
         if row.quick_fp != t["fp"] or row.size != t["size"] or str(row.mtime_ns) != str(t["mtime_ns"]):
             row.sha256 = None   # the file changed: a stored hash would describe the old bytes
+        if previous is not None:
+            row.sha256, row.first_seen = previous.sha256, previous.first_seen
         row.kind, row.folder, row.rel_path = t["kind"], t["folder"], t["path"]
         row.size, row.mtime_ns, row.quick_fp = t["size"], t["mtime_ns"], t["fp"]
         row.artist, row.title, row.genre_tag, row.bpm = t["artist"], t["title"], t["genre_tag"], t["bpm"]
