@@ -1,9 +1,11 @@
 """Discovery use case: new songs for one genre folder (read-only, never touches files)."""
+from concurrent.futures import ThreadPoolExecutor
+
 from sqlalchemy import select
 
 from ..core import discovery, matching
-from ..integrations import lastfm
 from ..core.library import GENRES
+from ..integrations import lastfm
 from ..db import session_scope
 from ..jobs import handler
 from ..models import Candidate, File, Playlist, PlaylistTrack, now
@@ -32,6 +34,16 @@ def seeds_for(session, genre):
 
 
 COLLAB_SHARE = 0.25
+LASTFM_PARALLEL = 5   # Last.fm answers each call in a few hundred ms; a handful at a time is polite and 5x faster
+
+
+def _map(fn, items):
+    """fn over items, a few at a time, results in the same order. The first error is raised."""
+    items = list(items)
+    if len(items) < 2:
+        return [fn(i) for i in items]
+    with ThreadPoolExecutor(max_workers=LASTFM_PARALLEL) as pool:
+        return list(pool.map(fn, items))
 
 
 def _similar_for(client, seeds):
@@ -39,8 +51,9 @@ def _similar_for(client, seeds):
     the first artist, usually the main one, gets the full weight and each other artist a
     quarter of it (COLLAB_SHARE), so a remixer or guest does not take over the folder."""
     similar, used = {}, {}
+    first = dict(zip(seeds, _map(client.similar_artists, seeds)))
     for seed, weight in seeds.items():
-        rows = client.similar_artists(seed)
+        rows = first[seed]
         parts = discovery.split_artists(seed)
         if rows or len(parts) < 2:
             similar[seed], used[seed] = rows, used.get(seed, 0) + weight
@@ -64,7 +77,8 @@ def discover(session, genre, client=None, seed_limit=15, artist_limit=20, tracks
     top_seeds = dict(sorted(seeds.items(), key=lambda kv: (-kv[1], kv[0]))[:seed_limit])
     similar, top_seeds = _similar_for(client, top_seeds)
     artists = discovery.score_artists(top_seeds, similar)[:artist_limit]
-    tracks = {a["artist"]: client.top_tracks(a["artist"], limit=tracks_per_artist) for a in artists}
+    names = [a["artist"] for a in artists]
+    tracks = dict(zip(names, _map(lambda name: client.top_tracks(name, limit=tracks_per_artist), names)))
     candidates = discovery.candidate_tracks(artists, tracks, library_entries(session),
                                             dismissed=dismissed_keys(session))
     return {"genre": genre, "seeds": top_seeds, "candidates": candidates}

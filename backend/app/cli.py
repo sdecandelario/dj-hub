@@ -11,6 +11,8 @@ import json
 import sys
 from pathlib import Path
 
+from sqlalchemy import select
+
 from . import db
 from .config import get_config
 from .core import library as lib
@@ -155,10 +157,10 @@ def cmd_undo(args):
     with session_scope() as s:
         if args.batch:
             batch = s.get(Batch, int(args.batch)) if args.batch.isdigit() else None
-            batch = batch or s.query(Batch).filter(Batch.legacy_id == args.batch).first()
+            batch = batch or s.scalar(select(Batch).where(Batch.legacy_id == args.batch))
         else:
-            batch = s.query(Batch).filter(Batch.status.in_(("applied", "partial")), Batch.kind != "undo") \
-                .order_by(Batch.id.desc()).first()
+            batch = s.scalar(select(Batch).where(Batch.status.in_(("applied", "partial")), Batch.kind != "undo")
+                             .order_by(Batch.id.desc()).limit(1))
         if batch is None:
             if args.batch:
                 sys.exit(f"Batch {args.batch} not found.")
@@ -171,7 +173,7 @@ def cmd_undo(args):
 
 def cmd_history(args):
     with session_scope() as s:
-        for b in s.query(Batch).filter(Batch.status != "discarded").order_by(Batch.id.desc()).limit(args.limit):
+        for b in s.scalars(select(Batch).where(Batch.status != "discarded").order_by(Batch.id.desc()).limit(args.limit)):
             print(f"{b.id:5}  {b.created_at:%Y-%m-%d %H:%M}  {b.status:9} {b.label}")
 
 

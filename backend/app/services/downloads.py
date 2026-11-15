@@ -4,7 +4,7 @@ import datetime as dt
 import time
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ..config import get_config
 from ..core import audio
@@ -13,6 +13,9 @@ from ..db import session_scope
 from ..jobs import handler
 from ..models import Decision, File, Review, now
 from . import analysis, library, playlists, settings
+
+
+KEEP_REVIEWS = 5
 
 
 @handler("review_downloads")
@@ -49,6 +52,11 @@ def run_review(ctx):
     }
     with session_scope() as s:
         s.add(Review(job_id=ctx.job_id, payload=payload))
+        s.flush()
+        # Only the latest review is ever read; keep a few for debugging instead of one per run forever.
+        old = s.scalars(select(Review.id).order_by(Review.id.desc()).offset(KEEP_REVIEWS)).all()
+        if old:
+            s.execute(delete(Review).where(Review.id.in_(old)))
     with session_scope() as s:
         playlists.link_downloads(s)
     multi = sum(len(song["versions"]) > 1 for song in songs)

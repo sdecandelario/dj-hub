@@ -9,7 +9,7 @@ from ..core import library as lib
 from ..db import session_scope
 from ..jobs import handler
 from ..models import Batch, Decision, File, FileOp, Playlist, now
-from . import settings
+from . import playlists, settings
 
 _apply_lock = threading.Lock()
 
@@ -284,8 +284,6 @@ def rel(path):
 @handler("library_scan")
 def run_scan(ctx):
     """Read the library from disk into the database, then match the playlists again."""
-    from . import playlists
-
     ctx.progress(0, 0, "Scanning the library")
     with session_scope() as s:
         counts = sync_library(s)
