@@ -141,6 +141,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 /* Folder tree */
 .tree h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 8px 4px; }
+.tree-row { display: flex; align-items: center; gap: 4px; }
+.tree-row input { margin: 0 0 0 4px; flex: none; }
+.tree-gap { width: 17px; flex: none; }
+.tree-head { display: flex; align-items: center; justify-content: space-between; }
+.tree-head .small { width: auto; padding: 2px 8px; }
+.tree-selection { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; margin-bottom: 6px;
+  border-radius: 8px; background: var(--accent-soft); }
+.tree-selection .small { width: auto; }
 .tree button { width: 100%; justify-content: space-between; border: 0; background: none; padding: 6px 8px; }
 .tree button:hover { background: var(--panel-2); }
 .tree button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }

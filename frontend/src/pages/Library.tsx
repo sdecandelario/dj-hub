@@ -59,25 +59,61 @@ function MoveBar({ tree, files, onClear }: { tree: Tree; files: LibraryFile[]; o
 function FolderTree({ tree, kind, folder, onPick }: {
   tree: Tree; kind: string; folder: string; onPick: (kind: string, folder: string) => void
 }) {
+  const jobs = useActiveJobs()
+  // Folders ticked for analysis, as "kind/folder" keys.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
   const count = (k: string, f?: string) =>
     tree.folders.filter(x => x.kind === k && (f === undefined || x.folder === f)).reduce((n, x) => n + x.count, 0)
-  const item = (k: string, f: string, label: string, n: number) => (
-    <button key={`${k}/${f}`} className={kind === k && folder === f ? 'active' : ''} onClick={() => onPick(k, f)}>
-      <span>{label}</span><small>{n}</small>
-    </button>
+  const toggle = (key: string) => setPicked(prev => { const next = new Set(prev); if (!next.delete(key)) next.add(key); return next })
+  const absolute = (rel: string) => `${tree.root}/${rel}`.replace(/\/$/, '')
+  const analyze = (paths: string[]) => startJob('analyze', { paths, reference: false })
+  const busy = isRunning(jobs, 'analyze')
+  const item = (k: string, f: string, label: string, n: number) => {
+    const key = `${k}/${f}`
+    return (
+      <div className="tree-row" key={key}>
+        <input type="checkbox" checked={picked.has(key)} onChange={() => toggle(key)} aria-label={`Select ${label} for analysis`} />
+        <button className={kind === k && folder === f ? 'active' : ''} onClick={() => onPick(k, f)}>
+          <span>{label}</span><small>{n}</small>
+        </button>
+      </div>
+    )
+  }
+  const group = (title: string, rel: string | null) => (
+    <div className="tree-head">
+      <h3>{title}</h3>
+      {rel && <button className="small ghost" disabled={busy} onClick={() => analyze([absolute(rel)])}
+        title={`Analyze every song in ${rel}`}>Analyze all</button>}
+    </div>
   )
   const unsorted = tree.folders.filter(x => x.kind === 'unsorted')
+  const chosen = [...picked].map(key => {
+    const i = key.indexOf('/')
+    return absolute(folderPath(key.slice(0, i), key.slice(i + 1)))
+  })
   return (
     <div className="panel tree sticky" style={{ padding: 8 }}>
-      {item('', '', 'Whole library', count('inbox') + count('genre') + count('session') + count('unsorted'))}
-      <h3>Workflow</h3>
+      {picked.size > 0 && (
+        <div className="tree-selection">
+          <b>{plural(picked.size, 'folder')} selected</b>
+          <button className="small" disabled={busy} onClick={() => analyze(chosen)}>Analyze {picked.size}</button>
+          <button className="small ghost" onClick={() => setPicked(new Set())}>Clear</button>
+        </div>
+      )}
+      <div className="tree-row">
+        <span className="tree-gap" />
+        <button className={kind === '' ? 'active' : ''} onClick={() => onPick('', '')}>
+          <span>Whole library</span><small>{count('inbox') + count('genre') + count('session') + count('unsorted')}</small>
+        </button>
+      </div>
+      {group('Workflow', null)}
       {item('inbox', '', '00 Inbox', count('inbox'))}
       {item('rejected', '', '00 Rejected', count('rejected'))}
-      <h3>Genres</h3>
+      {group('Genres', GENRES)}
       {tree.genres.map(g => item('genre', g, g, count('genre', g)))}
-      <h3>Sessions</h3>
+      {group('Sessions', SESSIONS)}
       {tree.sessions.map(s => item('session', s, s, count('session', s)))}
-      {unsorted.length > 0 && <h3>Unsorted</h3>}
+      {unsorted.length > 0 && group('Unsorted', null)}
       {unsorted.map(u => item('unsorted', u.folder, u.folder, u.count))}
     </div>
   )
@@ -283,7 +319,7 @@ export default function Library() {
             <Badge>{plural(files.data?.length ?? 0, 'file')}</Badge>
             <span className="spacer" />
             {(kind || !search) && (
-              <button className="small" onClick={() => startJob('analyze', { path: `${tree.data?.root}/${path}`.replace(/\/$/, '') })}>
+              <button className="small" onClick={() => startJob('analyze', { path: `${tree.data?.root}/${path}`.replace(/\/$/, ''), reference: !kind })}>
                 Analyze {kind ? 'folder' : 'library'}
               </button>
             )}

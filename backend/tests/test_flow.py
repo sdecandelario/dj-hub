@@ -165,6 +165,20 @@ def test_analysis_of_selected_songs_is_not_a_reference(env):
         assert [r["id"] for r in analysis.overview(s)["references"]] == [folder]
 
 
+def test_folders_analyzed_with_reference_false_do_not_become_the_reference(env):
+    one = real_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Liebe.mp3")
+    two = real_audio(env.root / "Genres" / "Post-Punk & Dark Wave" / "Boy Harsher - Pain.mp3", frequency=300)
+    job = runner.run_sync("analyze", {"paths": [str(one.parent), str(two.parent)], "reference": False}, echo=None)
+    with session_scope() as s:
+        run = next(r for r in analysis.runs(s) if r["id"] == job)
+        assert run["scope"] == "selection" and run["complete"] and len(analysis.run_tracks(s, job)) == 2
+        assert analysis.library_median(s) == (None, None)
+    single = runner.run_sync("analyze", {"path": str(one.parent), "reference": False}, echo=None)
+    with session_scope() as s:
+        assert next(r for r in analysis.runs(s) if r["id"] == single)["scope"] == "selection"
+        assert analysis.library_median(s) == (None, None)
+
+
 def test_missing_files_are_flagged_under_any_input_folder(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     gone = a / "gone.mp3"
