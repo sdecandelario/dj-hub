@@ -2,7 +2,7 @@
 
 With SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET and a saved login, the Web API reads
 full playlists. Otherwise the public embed page is used (first 100 tracks only).
-The login is saved in TOKEN_PATH (readable only by the user) and is never printed.
+The login is saved next to the database (readable only by the user) and is never printed.
 """
 import base64
 import http.server
@@ -16,12 +16,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from pathlib import Path
+
+from ..config import get_config
 
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback"   # terminal login (djhub spotify-login)
 APP_REDIRECT_URI = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8000/api/spotify/callback")
 SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative"
-TOKEN_PATH = Path.home() / ".config" / "dj-hub" / "spotify_token.json"
 LOGIN_TIMEOUT_SECONDS = 300
 MAX_RETRY_WAIT_SECONDS = 30
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) DJHub/1.0"
@@ -107,7 +107,7 @@ def _oauth_error(error):
 def _read_refresh_token():
     """Return the saved refresh token, or None if the file is missing or damaged."""
     try:
-        data = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+        data = json.loads(token_path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
@@ -117,18 +117,24 @@ def _read_refresh_token():
     return token if isinstance(token, str) and token else None
 
 
+def token_path():
+    """Where the login is kept: with the rest of the app's data, next to the database."""
+    return get_config().db_path.parent / "spotify_token.json"
+
+
 def has_saved_login():
     return _read_refresh_token() is not None
 
 
 def _save_refresh_token(refresh_token):
     """Write the token file atomically, readable only by the current user."""
-    TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = TOKEN_PATH.with_name(TOKEN_PATH.name + ".tmp")
+    path = token_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
     fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump({"refresh_token": refresh_token}, handle)
-    os.replace(tmp_path, TOKEN_PATH)
+    os.replace(tmp_path, path)
 
 
 def authorize_url(client_id, state, redirect_uri):

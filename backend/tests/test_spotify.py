@@ -30,7 +30,7 @@ class TokenTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         token_path = Path(self.tmp.name) / "sub" / "spotify_token.json"
         for patcher in (
-            mock.patch.object(c, "TOKEN_PATH", token_path),
+            mock.patch.object(c, "token_path", return_value=token_path),
             mock.patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "id", "SPOTIFY_CLIENT_SECRET": "secret"}),
         ):
             patcher.start()
