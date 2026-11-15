@@ -191,3 +191,9 @@ def test_batched_lookups_match_the_single_ones(env):
         found = analysis.reusable_many(s, ["aaa", "bbb", None], True, "v1")
         assert set(found) == {"aaa"}   # bbb was measured with another ffmpeg
         assert found["aaa"].id == analysis.reusable(s, "aaa", True, "v1").id
+
+
+def test_rms_levels_parser():
+    from app.core.audio import rms_levels
+    text = "x\n[Parsed_astats_9] RMS level dB: -20.5\nnoise\n[Parsed_astats_9] RMS level dB: -inf\n[a] RMS level dB: nan?\n"
+    assert rms_levels(text) == [-20.5, float("-inf"), float("-inf")]

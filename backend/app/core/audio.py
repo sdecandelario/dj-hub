@@ -155,6 +155,18 @@ def probe(path):
     }
 
 
+def rms_levels(stderr):
+    """The 'RMS level dB' values ffmpeg's astats filter printed, in order (-inf when not a number)."""
+    levels = []
+    for line in stderr.splitlines():
+        if 'RMS level dB' in line:
+            try:
+                levels.append(float(line.rsplit(':', 1)[1]))
+            except ValueError:
+                levels.append(-math.inf)
+    return levels
+
+
 def high_frequency(path):
     """RMS level (dB) of the full signal minus the level above 17 kHz and above 19.5 kHz (mono mix).
     A large gap above 19.5 kHz on a lossy file suggests a transcode."""
@@ -164,13 +176,7 @@ def high_frequency(path):
              '[a][b2][c2]amerge=inputs=3,astats=measure_overall=none:measure_perchannel=RMS_level[out]')
     proc = run(['ffmpeg', '-nostdin', '-hide_banner', '-i', str(path), '-filter_complex', graph,
                 '-map', '[out]', '-f', 'null', '-'])
-    levels = []
-    for line in proc.stderr.splitlines():
-        if 'RMS level dB' in line:
-            try:
-                levels.append(float(line.rsplit(':', 1)[1]))
-            except ValueError:
-                levels.append(-math.inf)
+    levels = rms_levels(proc.stderr)
     if len(levels) != 3 or not math.isfinite(levels[0]):
         return {'hf_gap_17k_db': None, 'hf_gap_19k_db': None}
     gap = lambda v: round(levels[0] - v, 1) if math.isfinite(v) else 150.0
@@ -216,13 +222,7 @@ def tonal_balance(path):
              + f'amerge=inputs={len(TONE_BANDS) + 1},astats=measure_overall=none:measure_perchannel=RMS_level[out]')
     proc = run(['ffmpeg', '-nostdin', '-hide_banner', '-i', str(path), '-filter_complex', graph,
                 '-map', '[out]', '-f', 'null', '-'])
-    levels = []
-    for line in proc.stderr.splitlines():
-        if 'RMS level dB' in line:
-            try:
-                levels.append(float(line.rsplit(':', 1)[1]))
-            except ValueError:
-                levels.append(-math.inf)
+    levels = rms_levels(proc.stderr)
     if len(levels) != len(TONE_BANDS) + 1 or not math.isfinite(levels[0]):
         return {name: None for name, _ in TONE_BANDS}
     return {name: round(level - levels[0], 1) if math.isfinite(level) else -150.0

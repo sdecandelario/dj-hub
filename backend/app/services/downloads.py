@@ -36,17 +36,7 @@ def run_review(ctx):
     ctx.progress(0, len(items), f"{len(items)} download(s) found")
     measured = _measure(ctx, items, versions, cfg.workers)
     with session_scope() as s:
-        seen = set()
-        for item in items:
-            row = library.register_file(s, item["path"], "download")
-            row.area, row.present, row.last_seen = "download", True, now()
-            row.size, row.mtime_ns, row.sha256 = item["size"], item["mtime_ns"], item["sha256"]
-            row.artist, row.title = item.get("tag_artist") or "", item.get("tag_title") or ""
-            item["file_id"] = row.id
-            seen.add(item["path"])
-        for row in s.scalars(select(File).where(File.area == "download", File.present.is_(True))).all():
-            if row.path not in seen:
-                row.present = False
+        _store_downloads(s, items)
         tracks = library.scan(s)
         median, median_run = analysis.library_median(s)
     songs = dl.build_songs(items, dl.library_index(tracks))
@@ -65,6 +55,21 @@ def run_review(ctx):
     return {"message": f"{len(items)} file(s), {len(songs)} song(s), {multi} with more than one version; "
                        f"{measured} measured now", "files": len(items), "songs": len(songs),
             "measured": measured, "skipped_recent": len(skipped)}
+
+
+def _store_downloads(session, items):
+    """Record the download files in the files table (and mark the ones no longer there as gone)."""
+    seen = set()
+    for item in items:
+        row = library.register_file(session, item["path"], "download")
+        row.area, row.present, row.last_seen = "download", True, now()
+        row.size, row.mtime_ns, row.sha256 = item["size"], item["mtime_ns"], item["sha256"]
+        row.artist, row.title = item.get("tag_artist") or "", item.get("tag_title") or ""
+        item["file_id"] = row.id
+        seen.add(item["path"])
+    for row in session.scalars(select(File).where(File.area == "download", File.present.is_(True))).all():
+        if row.path not in seen:
+            row.present = False
 
 
 def _measure(ctx, items, versions, workers):
