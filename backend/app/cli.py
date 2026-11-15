@@ -60,7 +60,7 @@ def run_change(kind, payload, apply):
     print(f"\nApplied {result['done']} change(s). Batch {batch_id} ({result['status']}). "
           f"Undo with: djhub undo --batch {batch_id} --apply")
     if result["error"]:
-        print(f"  ERROR: {result['error']}")
+        sys.exit(f"  ERROR: {result['error']}")
 
 
 def cmd_status(args):
@@ -160,14 +160,13 @@ def cmd_undo(args):
             batch = s.query(Batch).filter(Batch.status.in_(("applied", "partial")), Batch.kind != "undo") \
                 .order_by(Batch.id.desc()).first()
         if batch is None:
-            print("Nothing to undo." if not args.batch else f"Batch {args.batch} not found.")
+            if args.batch:
+                sys.exit(f"Batch {args.batch} not found.")
+            print("Nothing to undo.")
             return
         print(f"Batch {batch.id}: {batch.label}")
         batch_id = batch.id
-    try:
-        run_change("undo", {"batch_id": batch_id}, args.apply)
-    except library.BatchError as exc:
-        print(exc)
+    run_change("undo", {"batch_id": batch_id}, args.apply)   # a BatchError exits non-zero in main()
 
 
 def cmd_history(args):
@@ -221,7 +220,7 @@ def _print_candidate(c):
 
 def cmd_discover(args):
     """Find new-song candidates for a genre folder with Last.fm and store them (no files change)."""
-    from .core import lastfm
+    from .integrations import lastfm
     from .services import discovery
     try:
         with session_scope() as s:

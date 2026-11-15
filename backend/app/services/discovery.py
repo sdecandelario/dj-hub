@@ -1,12 +1,13 @@
 """Discovery use case: new songs for one genre folder (read-only, never touches files)."""
 from sqlalchemy import select
 
-from ..core import discovery, lastfm, matching
+from ..core import discovery, matching
+from ..integrations import lastfm
 from ..core.library import GENRES
 from ..db import session_scope
 from ..jobs import handler
 from ..models import Candidate, File, Playlist, PlaylistTrack, now
-from .playlists import _library_entries
+from .playlists import library_entries
 
 
 class UnknownGenre(ValueError):
@@ -64,7 +65,7 @@ def discover(session, genre, client=None, seed_limit=15, artist_limit=20, tracks
     similar, top_seeds = _similar_for(client, top_seeds)
     artists = discovery.score_artists(top_seeds, similar)[:artist_limit]
     tracks = {a["artist"]: client.top_tracks(a["artist"], limit=tracks_per_artist) for a in artists}
-    candidates = discovery.candidate_tracks(artists, tracks, _library_entries(session),
+    candidates = discovery.candidate_tracks(artists, tracks, library_entries(session),
                                             dismissed=dismissed_keys(session))
     return {"genre": genre, "seeds": top_seeds, "candidates": candidates}
 
@@ -135,10 +136,6 @@ class _PlaylistIndex:
         return found
 
 
-def _playlist_index(session):
-    return _PlaylistIndex(session)
-
-
 def list_candidates(session, status=None, genre=None):
     """Stored candidates, best first, each with the playlists that already have the song."""
     query = select(Candidate).order_by(Candidate.score.desc(), Candidate.id)
@@ -146,7 +143,7 @@ def list_candidates(session, status=None, genre=None):
         query = query.where(Candidate.status == status)
     if genre:
         query = query.where(Candidate.genre == genre)
-    index = _playlist_index(session)
+    index = _PlaylistIndex(session)
     return [{
         "id": c.id, "genre": c.genre, "artist": c.artist, "title": c.title, "status": c.status,
         "score": c.score, "because": c.because, "you_own": c.you_own, "check": c.check,

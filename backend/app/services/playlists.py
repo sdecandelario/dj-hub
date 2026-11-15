@@ -3,7 +3,8 @@ import urllib.error
 
 from sqlalchemy import delete, select
 
-from ..core import matching, spotify
+from ..core import matching
+from ..integrations import spotify
 from ..db import session_scope
 from ..jobs import handler
 from ..models import File, Mark, Match, Playlist, PlaylistTrack, Review, now
@@ -83,7 +84,7 @@ def run_match(ctx):
             **counts}
 
 
-def _library_entries(session):
+def library_entries(session):
     rows = session.scalars(select(File).where(File.area == "library", File.present.is_(True),
                                               File.kind != "rejected")).all()
     return [matching.local_entry(r.path, r.rel_path, artist=r.artist, title=r.title) for r in rows]
@@ -110,7 +111,7 @@ def _unique_tracks(session):
 
 def match_all(session):
     """Match every playlist track against the library, then the gaps against the downloads."""
-    library = _library_entries(session)
+    library = library_entries(session)
     index = matching.build_index(library)
     tracks = _unique_tracks(session)
     old = {m.spotify_id: m for m in session.scalars(select(Match)).all()}

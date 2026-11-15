@@ -12,8 +12,14 @@ LOSSLESS = {'flac', 'alac', 'wav', 'pcm_s16le', 'pcm_s24le', 'pcm_s16be', 'pcm_s
 LOUDNESS_FIELDS = ('integrated_lufs', 'true_peak_dbtp', 'loudness_range_lu')
 
 
+TOOL_TIMEOUT_SECONDS = 30 * 60   # a corrupt file must not hang a job forever
+
+
 def run(args):
-    return subprocess.run(args, capture_output=True, text=True, errors='replace')
+    try:
+        return subprocess.run(args, capture_output=True, text=True, errors='replace', timeout=TOOL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(args, 1, '', f'{args[0]} timed out')
 
 
 def missing_tools():
@@ -21,10 +27,10 @@ def missing_tools():
 
 
 def tool_versions():
-    return {
-        'ffmpeg_version': run(['ffmpeg', '-version']).stdout.splitlines()[0],
-        'ffprobe_version': run(['ffprobe', '-version']).stdout.splitlines()[0],
-    }
+    def first_line(tool):
+        lines = run([tool, '-version']).stdout.splitlines()
+        return lines[0] if lines else ''
+    return {'ffmpeg_version': first_line('ffmpeg'), 'ffprobe_version': first_line('ffprobe')}
 
 
 # --- Hashes ---------------------------------------------------------------------

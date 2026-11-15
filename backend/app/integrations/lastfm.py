@@ -5,6 +5,7 @@ The API key comes from the LASTFM_API_KEY environment variable and is never prin
 """
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -26,8 +27,17 @@ def api_key():
 def _http_fetch(params):
     url = API_URL + "?" + urllib.parse.urlencode(params)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.load(response)
+    except (urllib.error.URLError, OSError, ValueError) as error:
+        # Not `from error`: its text can carry the request URL, which contains the API key.
+        raise LastfmError(f"Last.fm request failed ({type(error).__name__})") from None
+
+
+def _as_list(value):
+    """Last.fm returns a single result as an object instead of a one-item list."""
+    return [] if not value else value if isinstance(value, list) else [value]
 
 
 class Lastfm:
@@ -44,9 +54,9 @@ class Lastfm:
     def similar_artists(self, artist, limit=30):
         """[(name, match 0..1)] for artists similar to `artist`."""
         data = self._call("artist.getsimilar", artist=artist, limit=limit, autocorrect=1)
-        return [(a["name"], float(a.get("match", 0))) for a in data.get("similarartists", {}).get("artist", [])]
+        return [(a["name"], float(a.get("match", 0))) for a in _as_list(data.get("similarartists", {}).get("artist"))]
 
     def top_tracks(self, artist, limit=10):
         """[title] for the artist's most played tracks."""
         data = self._call("artist.gettoptracks", artist=artist, limit=limit, autocorrect=1)
-        return [t["name"] for t in data.get("toptracks", {}).get("track", [])]
+        return [t["name"] for t in _as_list(data.get("toptracks", {}).get("track"))]

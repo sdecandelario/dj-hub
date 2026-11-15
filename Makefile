@@ -3,7 +3,7 @@ SHELL := /bin/bash
 HOST := 127.0.0.1
 PORT := 8000
 
-.PHONY: setup dev start build test import-legacy migration
+.PHONY: setup dev start build test lint import-legacy migration
 
 setup:
 	uv sync --project backend
@@ -28,6 +28,10 @@ build:
 test:
 	uv run --directory backend pytest -q
 	npm --prefix frontend run build
+
+lint:
+	uv run --directory backend ruff check .
+	npm --prefix frontend run lint
 
 import-legacy:
 	uv run --directory backend djhub import-legacy

@@ -75,16 +75,19 @@ def scan(root, cache=None):
         if (not path.is_file() or path.suffix.lower() not in AUDIO
                 or any(p.startswith(".") for p in rel.parts)):
             continue
-        stat = path.stat()
-        kind, folder = classify(rel)
-        old = cache.get(str(path))
-        if old and old.get("size") == stat.st_size and str(old.get("mtime_ns")) == str(stat.st_mtime_ns) \
-                and old.get("fp"):
-            info = {k: old.get(k) or "" for k in ("artist", "title", "genre_tag", "bpm")}
-            fp = old["fp"]
-        else:
-            info = describe_file(path)
-            fp = quick_fingerprint(path)
+        try:
+            stat = path.stat()
+            kind, folder = classify(rel)
+            old = cache.get(str(path))
+            if old and old.get("size") == stat.st_size and str(old.get("mtime_ns")) == str(stat.st_mtime_ns) \
+                    and old.get("fp"):
+                info = {k: old.get(k) or "" for k in ("artist", "title", "genre_tag", "bpm")}
+                fp = old["fp"]
+            else:
+                info = describe_file(path)
+                fp = quick_fingerprint(path)
+        except OSError:   # removed during the scan, or not downloaded from iCloud yet
+            continue
         tracks.append({"path": str(rel), "abs": str(path), "kind": kind, "folder": folder, "fp": fp,
                        "size": stat.st_size, "mtime_ns": str(stat.st_mtime_ns), **info})
     return tracks

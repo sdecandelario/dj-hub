@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from ..config import get_config
-from ..core import spotify
+from ..integrations import spotify
 from ..jobs import runner
 from ..models import Playlist
 from ..services import playlists

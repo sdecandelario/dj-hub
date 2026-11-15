@@ -15,7 +15,7 @@ Audio analysis is read-only. Never modify music files, tags, or the Rekordbox li
 - `djhub discover` is read-only but calls Last.fm (`LASTFM_API_KEY` env var, never print it). Candidates come from Last.fm data; only the fit review against the projects below is done by Claude.
 - Never read or print `~/.zprofile` or `~/.config/dj_playlist_checker/spotify_token.json`. They hold the Spotify keys and login.
 - The database is `~/.local/share/dj-hub/dj-hub.db` (override with `DJ_HUB_DB`). Schema changes need an Alembic migration: `make migration m="..."`.
-- Layout: `backend/app/core` is pure logic (ported from the old scripts, keep it free of database and web code); `services` are the use cases; `api` the HTTP routes; `cli.py` the `djhub` command used by the skills in `.claude/skills/` (`dj-library`, `dj-discover`). The skills live only there, so change a skill in the same commit as the command it calls. They load when Claude Code starts in this folder. `frontend/src/pages` has one file per page.
+- Layout: `backend/app/core` is logic ported from the old scripts (keep it free of database and web code); `integrations` holds the Spotify and Last.fm clients (network, login file, env vars); `services` are the use cases; `api` the HTTP routes; `cli.py` the `djhub` command used by the skills in `.claude/skills/` (`dj-library`, `dj-discover`). The skills live only there, so change a skill in the same commit as the command it calls. They load when Claude Code starts in this folder. `frontend/src/pages` has one file per page.
 - Artist names in the profiles below must match Spotify's spelling.
 
 ## DJ projects

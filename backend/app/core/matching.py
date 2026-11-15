@@ -8,6 +8,7 @@ import re
 import unicodedata
 from pathlib import Path
 
+from .names import guess_from_filename
 from .tags import read_tags
 
 # Suffixes that describe the same recording for DJ purposes.
@@ -29,11 +30,7 @@ def normalize(text):
 
 def parse_filename(stem):
     """Guess artist/title from names like '01 - Artist - Title' or 'Artist - Title'."""
-    stem = re.sub(r"^\s*\d{1,3}\s*[-.\s_]\s*", "", stem)
-    parts = [p.strip() for p in re.split(r"\s+-\s+", stem) if p.strip()]
-    if len(parts) >= 2:
-        return {"artist": parts[0], "title": parts[-1]}
-    return {"title": stem.strip()}
+    return guess_from_filename(stem)
 
 
 def local_entry(path, relative_path, artist=None, title=None):

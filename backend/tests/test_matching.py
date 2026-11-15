@@ -1,7 +1,7 @@
 import unittest
 
 from app.core import matching as c
-from app.core.spotify import parse_playlist_id
+from app.integrations.spotify import parse_playlist_id
 
 
 def local(artist, title, path=None):

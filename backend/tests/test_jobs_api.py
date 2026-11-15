@@ -120,3 +120,43 @@ def test_settings_sources_must_be_real_folders(client, env):
     assert client.put("/api/settings", json={"sources": ["/"]}).status_code == 400
     assert client.put("/api/settings", json={"sources": [str(env.tmp / "missing")]}).status_code == 400
     assert client.put("/api/settings", json={"sources": ["relative"]}).status_code == 400
+
+
+def test_lastfm_errors_never_carry_the_api_key(monkeypatch):
+    import urllib.error
+    from app.integrations import lastfm
+
+    def boom(request, timeout):
+        raise urllib.error.URLError("https://ws.audioscrobbler.com/2.0/?api_key=SECRET")
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", boom)
+    with pytest.raises(lastfm.LastfmError) as error:
+        lastfm.Lastfm(key="SECRET").top_tracks("DAF")
+    assert "SECRET" not in str(error.value) and error.value.__cause__ is None
+
+
+def test_lastfm_single_result_is_a_list():
+    from app.integrations.lastfm import Lastfm
+    fake = lambda params: {"toptracks": {"track": {"name": "Only One"}}}   # noqa: E731
+    assert Lastfm(key="k", fetch=fake).top_tracks("x") == ["Only One"]
+
+
+def test_scan_skips_files_that_vanish(env, monkeypatch):
+    from app.core import library as core
+    from .conftest import fake_audio
+    fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    fake_audio(env.root / "00 Inbox" / "B - Two.mp3")
+    real = core.quick_fingerprint
+
+    def flaky(path):
+        if "B - Two" in str(path):
+            raise FileNotFoundError(path)
+        return real(path)
+    monkeypatch.setattr(core, "quick_fingerprint", flaky)
+    assert [t["path"] for t in core.scan(env.root)] == ["00 Inbox/A - One.mp3"]
+
+
+def test_cli_exits_non_zero_when_a_batch_is_missing(env):
+    from app import cli
+    with pytest.raises(SystemExit) as error:
+        cli.main(["undo", "--batch", "999"])
+    assert "not found" in str(error.value)

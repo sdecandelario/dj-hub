@@ -1,7 +1,7 @@
 import pytest
 
 from app.core import discovery as d
-from app.core.lastfm import Lastfm
+from app.integrations.lastfm import Lastfm
 from app.db import session_scope
 from app.models import File
 from app.services import discovery as service
@@ -163,7 +163,7 @@ def test_candidates_api(client, env):
 
 
 def test_discover_job_stores_candidates_and_reports_errors(env, monkeypatch):
-    from app.core import lastfm
+    from app.integrations import lastfm
     from app.jobs import runner
     from app.models import Job
     monkeypatch.setattr(lastfm, "_http_fetch", fake_fetch)

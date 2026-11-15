@@ -1,11 +1,10 @@
 """Every test gets its own library, Trash, download folder and database in a temp folder."""
-import os
 import subprocess
 
 import pytest
 
 from app import config, db
-from app.core import spotify
+from app.integrations import spotify
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-import app.core.spotify as c
+import app.integrations.spotify as c
 
 
 def http_error(code, body=None, headers=None):
