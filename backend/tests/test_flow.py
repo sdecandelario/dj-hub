@@ -91,11 +91,11 @@ def test_playlist_matching_and_waiting_downloads(env):
 def test_api_smoke(client, env):
     song = real_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
     client.post("/api/jobs", json={"type": "library_scan"})
-    for _ in range(50):
-        if not runner.busy():
-            break
-        import time
-        time.sleep(0.1)
+    import time
+    deadline = time.monotonic() + 30
+    while runner.busy() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not runner.busy(), "the library scan did not finish"
     files = client.get("/api/library/files", params={"kind": "inbox"}).json()
     assert [f["name"] for f in files] == [song.name]
     detail = client.get(f"/api/files/{files[0]['id']}").json()

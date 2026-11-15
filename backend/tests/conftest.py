@@ -1,4 +1,5 @@
 """Every test gets its own library, Trash, download folder and database in a temp folder."""
+import shutil
 import subprocess
 
 import pytest
@@ -35,8 +36,13 @@ def fake_audio(path, content=b"x"):
     return path
 
 
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+
+
 def real_audio(path, seconds=3, frequency=440, bitrate="320k", title=None, artist=None):
-    """A real MP3 made with ffmpeg."""
+    """A real MP3 made with ffmpeg (the test is skipped when ffmpeg is missing)."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not installed")
     path.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency={frequency}:duration={seconds}",
            "-b:a", bitrate]

@@ -160,3 +160,15 @@ def test_cli_exits_non_zero_when_a_batch_is_missing(env):
     with pytest.raises(SystemExit) as error:
         cli.main(["undo", "--batch", "999"])
     assert "not found" in str(error.value)
+
+
+def test_models_and_migrations_agree(env):
+    """After running every migration, the database has exactly what models.py describes."""
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from app.db import engine
+    from app.models import Base
+    with engine().connect() as connection:
+        context = MigrationContext.configure(connection, opts={"compare_type": False})
+        assert compare_metadata(context, Base.metadata) == []
