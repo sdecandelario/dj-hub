@@ -157,25 +157,38 @@ def apply(session_factory, batch_id):
                 batch.applied_at = now()
         if refusal:
             raise BatchError(refusal)
-        seq = [0]
+        state = {"seq": 0, "done": 0, "op": None}
         moved = set()
         warnings = []
 
+        def intend(step):
+            # Written down before the file is touched, so a crash cannot leave a move the history does not know.
+            state["seq"] += 1
+            with session_factory() as s:
+                op = FileOp(batch_id=batch_id, seq=state["seq"], action=step.action, label=step.label,
+                            source=step.source, dest=step.dest)
+                s.add(op)
+                s.flush()
+                state["op"] = op.id
+
         def log(step):
-            seq[0] += 1
+            state["done"] += 1
             moved.add(step.source)
             if step.note.startswith('Tags not written'):
                 warnings.append(f'{Path(step.dest).name}: {step.note}')
             with session_factory() as s:
-                s.add(FileOp(batch_id=batch_id, seq=seq[0], action=step.action, label=step.label,
-                             source=step.source, dest=step.dest, tags_before=step.tags_before or None))
+                s.get(FileOp, state["op"]).tags_before = step.tags_before or None
+            state["op"] = None
 
         error = ""
         try:
-            lib.execute(get_config().root, fresh, on_done=log)
+            lib.execute(get_config().root, fresh, on_done=log, on_start=intend)
         except Exception as exc:   # whatever went wrong, the batch must not stay "running"
             error = str(exc) or type(exc).__name__
-        # An undo that could not revert every step is not a finished undo.
+            if state["op"] is not None:   # the step that failed: keep its row only if it really happened
+                with session_factory() as s:
+                    forget_unexecuted_ops(s, batch_id, only=state["op"])
+        seq = [state["done"]]
         with session_factory() as session:
             batch = session.get(Batch, batch_id)
             if error:
@@ -206,11 +219,24 @@ def apply(session_factory, batch_id):
         return result
 
 
+def forget_unexecuted_ops(session, batch_id, only=None):
+    """Drop logged steps whose file change never happened (the intent was written, then the step failed
+    or the app stopped). A move or copy happened when its destination exists."""
+    query = select(FileOp).where(FileOp.batch_id == batch_id)
+    if only is not None:
+        query = query.where(FileOp.id == only)
+    for op in session.scalars(query).all():
+        if op.action != "tags" and not Path(op.dest).exists():
+            session.delete(op)
+    session.flush()
+
+
 def recover_batches(session):
     """Batches left 'running' by a crash: keep what was logged, so the history stays accurate
     and whatever did move can still be undone."""
     stuck = session.scalars(select(Batch).where(Batch.status == "running")).all()
     for batch in stuck:
+        forget_unexecuted_ops(session, batch.id)
         logged = session.scalar(select(func.count()).select_from(FileOp).where(FileOp.batch_id == batch.id))
         batch.status = "partial" if logged else "failed"
         batch.error = batch.error or "Interrupted before it finished"

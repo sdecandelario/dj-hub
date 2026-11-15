@@ -351,3 +351,45 @@ def test_scan_sync_clears_hash_when_file_changes(env):
     with session_scope() as s:
         library.sync_library(s)
         assert s.scalar(select(File).where(File.path == str(song))).sha256 is None
+
+
+def test_intent_is_logged_before_a_move_and_dropped_when_it_fails(env, monkeypatch):
+    from app.core import library as core
+
+    a = fake_audio(env.root / "00 Inbox" / "A - One.mp3", b"1")
+    b = fake_audio(env.root / "00 Inbox" / "B - Two.mp3", b"2")
+    items = [{"source": f"00 Inbox/{p.name}", "to": "Genres/EBM & Industrial", "action": "move"} for p in (a, b)]
+    batch = preview("apply", {"items": items})
+    real_move = core.shutil.move
+    seen = []
+
+    def flaky(source, dest):
+        with session_scope() as s:   # the intent is already in the database when the file moves
+            seen.append(s.query(FileOp).filter_by(batch_id=batch).count())
+        if "B - Two" in str(source):
+            raise OSError("disk went away")
+        return real_move(source, dest)
+    monkeypatch.setattr(core.shutil, "move", flaky)
+    result = library.apply(session_scope, batch)
+    assert seen == [1, 2] and result["status"] == "partial"
+    with session_scope() as s:
+        ops = s.query(FileOp).filter_by(batch_id=batch).all()
+        assert [Path(o.source).name for o in ops] == ["A - One.mp3"]   # the failed move left no row
+    assert b.exists() and not a.exists()
+
+
+def test_recovery_keeps_moves_that_happened_and_drops_those_that_did_not(env):
+    done = fake_audio(env.root / "Genres" / "EBM & Industrial" / "A - One.mp3")
+    with session_scope() as s:
+        batch = Batch(kind="apply", status="running", label="x", request={}, plan={"steps": []})
+        s.add(batch)
+        s.flush()
+        s.add(FileOp(batch_id=batch.id, seq=1, action="move", source=str(env.root / "00 Inbox" / "A - One.mp3"),
+                     dest=str(done)))
+        s.add(FileOp(batch_id=batch.id, seq=2, action="move", source=str(env.root / "00 Inbox" / "B - Two.mp3"),
+                     dest=str(env.root / "Genres" / "EBM & Industrial" / "B - Two.mp3")))
+    with session_scope() as s:
+        assert library.recover_batches(s) == 1
+    with session_scope() as s:
+        assert s.query(Batch).one().status == "partial"
+        assert s.query(FileOp).count() == 1

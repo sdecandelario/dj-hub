@@ -599,13 +599,15 @@ def _copy(source, dest):
         temp.unlink(missing_ok=True)
 
 
-def execute(root, plan, on_done=None):
-    """Run the plan's steps in order. `on_done(step)` is called after each one, so the
-    caller can log progress even if a later step fails."""
+def execute(root, plan, on_done=None, on_start=None):
+    """Run the plan's steps in order. `on_start(step)` is called just before each step (so the
+    caller can write its intent down first) and `on_done(step)` right after it."""
     _preflight(plan)
     done = []
     for step in plan.runnable():
         dest = Path(step.dest)
+        if on_start:
+            on_start(step)
         if step.action == "tags":
             try:
                 step.tags_before = write_tags(dest, step.tags, step.fill_tags)
