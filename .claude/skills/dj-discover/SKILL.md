@@ -8,7 +8,7 @@ description: Find new songs to add to one of the user's genre folders in ~/Docum
 Candidates come from real data, never from memory. `djhub discover` reads the artists in a genre folder, asks Last.fm for similar artists, ranks them by how many of the folder's artists point to them, and drops every song already in the library. It is read-only: no files, tags or playlists change.
 
 ```sh
-uv run --project ~/Projects/dj-hub/backend djhub discover "<genre folder>" [--artists 20] [--tracks 3] [--json]
+uv run --project ~/Projects/dj-hub/backend djhub discover "<genre folder>" [--artists N] [--tracks N (default 2)] [--json]
 ```
 
 Needs `LASTFM_API_KEY` in the environment. Never print it. If it is missing, tell the user to create a free key at https://www.last.fm/api/account/create.

@@ -32,7 +32,7 @@ Download folders (`SOURCES`): `~/.local/share/nicotine/downloads` and `~/Downloa
 - Changing genre: **move** from the old genre folder to the new one.
 - `00 Rejected` is not part of the library: `status`, `scan` and `dupes` ignore it.
 - The script refuses anything that would leave a song with no genre or with two genres, and never deletes: `remove` and `undo` send files to the Trash.
-- Do not rename files or edit tags or audio. Rekordbox finds tracks by file path, so after Rekordbox has imported a file, moving or renaming it makes it show as missing. Mention this when the user changes the genre of, or removes, a song they may have already imported. The session folders were moved into `Sessions/` on 2026-11-08, so session playlists imported before that need re-linking or re-importing in Rekordbox.
+- Never edit audio. Tags and names change only in the batches below (always previewed first, and undo restores the old values): `intake` writes artist and title tags (and fills an empty album or year), `fix-tags` fills missing artist and title tags from the file name (with `--genre`, also sets the genre tag to the genre folder name), and the app's rename batch (00 Inbox only) renames a file to `Artist - Title.mp3` with matching tags. Do not rename or retag any other way. Rekordbox finds tracks by file path, so after Rekordbox has imported a file, moving or renaming it makes it show as missing. Mention this when the user changes the genre of, or removes, a song they may have already imported. The session folders were moved into `Sessions/` on 2026-11-08, so session playlists imported before that need re-linking or re-importing in Rekordbox.
 - Nicotine shares the whole `DJ Tracks` folder, so `00 Inbox` and `00 Rejected` are shared too.
 
 ## Genres
@@ -50,13 +50,18 @@ Choose by artist and track, using your music knowledge, the `genre_tag` (often g
 | `find WORDS...` | Every copy of songs matching artist/title/filename words |
 | `apply PLAN.json [--apply]` | Run a plan of copies and moves |
 | `remove PATH... [--apply]` | Send copies to the Trash (files or folders, relative to the library) |
-| `intake PICKS.json [--apply]` | Move reviewed downloads: the kept version to `00 Inbox`, the others to `00 Rejected/<song>` |
+| `intake PICKS.json [--apply]` | Move reviewed downloads: the kept version to `00 Inbox`, the others to `00 Rejected/<song>` (format below) |
+| `fix-tags [--genre] [--apply]` | Fill missing artist/title tags from file names; with `--genre`, also set the genre tag to the genre folder (rewrites most files) |
 | `intake-decided [--apply]` | Same, for the songs the user decided on the app's Downloads page |
 | `review` | Measure and group the downloads (read-only); results show on the Downloads page |
 | `history` | Recent batches with their IDs |
 | `index` | JSON of every library file (used by the downloads review) |
 | `undo [--batch ID] [--apply]` | Revert the last applied change, or a given batch (number, or an old djlib batch name) |
 | `dupes` | Same file under two names, and same artist+title in different files |
+| `analyze PATH...` | Loudness analysis of files or folders (read-only); results show on the Analysis page |
+| `refresh-playlists` | Read the Spotify playlists and match them against the library (calls Spotify: ask first) |
+| `scan-library` | Update the app's view of the library after files changed outside the app |
+| `import-legacy` | One-time import of the old projects' history (already done) |
 
 Plan file format (write it to the session scratchpad, not the library):
 
@@ -68,6 +73,17 @@ Plan file format (write it to the session scratchpad, not the library):
 ```
 
 `source` is always the song's path when the plan starts; the script follows a move made earlier in the same plan.
+
+Picks file format for `intake` (`djhub intake-decided` builds this from the Downloads page, so write it by hand only when asked):
+
+```json
+[
+  {"song": "Boy Harsher - Pain", "keep": "/abs/path/in/downloads.mp3", "reject": ["/abs/other/version.mp3"],
+   "artist": "Boy Harsher", "title": "Pain"}
+]
+```
+
+`keep` is `null` to reject every version. Paths must be inside a download folder. `artist` and `title` (optional) rename the kept file and write its tags. A song with any problem is skipped as a whole.
 
 ## Workflow
 
