@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { api, type PlaylistInfo, type Settings, type SpotifyStatus } from '../api'
 import { startJob } from '../components/jobs'
 import { Badge, ErrorNote, when } from '../components/ui'
+import { attempt } from '../components/errors'
 
 const PROJECTS = ['Serge Candel', 'Juventudes Gilderianas', 'Perry Boys']
 
@@ -27,8 +28,8 @@ export default function SettingsPage() {
     mutationFn: () => api.post('/playlists', { value: newPlaylist, project: newProject }),
     onSuccess: () => { setNewPlaylist(''); refresh() },
   })
-  const patch = (id: string, body: object) => api.patch(`/playlists/${id}`, body).then(refresh)
-  const remove = (id: string) => api.del(`/playlists/${id}`).then(refresh)
+  const patch = (id: string, body: object) => attempt(api.patch(`/playlists/${id}`, body).then(refresh))
+  const remove = (id: string) => attempt(api.del(`/playlists/${id}`).then(refresh))
   const importLegacy = useMutation({
     mutationFn: () => api.post<Record<string, number>>('/settings/import-legacy'),
     onSuccess: data => { setImported(data); startJob('library_scan'); refresh() },

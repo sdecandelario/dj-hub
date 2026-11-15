@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type Job } from '../api'
+import { attempt } from './errors'
 import { JOB_LABELS, StatusBadge } from './ui'
 
 // Which cached queries to refresh when a job of this type finishes.
@@ -67,7 +68,7 @@ export function JobBar() {
   const visible = jobs.filter(j => !hidden.has(j.id))
   if (!visible.length) return null
   return (
-    <div className="jobbar">
+    <div className="jobbar" role="status" aria-live="polite">
       {visible.map(job => {
         const active = job.status === 'running' || job.status === 'queued'
         const pct = job.total ? Math.round((100 * job.done) / job.total) : 0
@@ -78,9 +79,9 @@ export function JobBar() {
               <StatusBadge status={job.status} />
               <span className="spacer" />
               {active ? (
-                <button className="small" onClick={() => api.post(`/jobs/${job.id}/cancel`)}>Cancel</button>
+                <button className="small" onClick={() => attempt(api.post(`/jobs/${job.id}/cancel`))}>Cancel</button>
               ) : (
-                <button className="small ghost" onClick={() => setHidden(new Set(hidden).add(job.id))}>✕</button>
+                <button className="small ghost" aria-label="Dismiss" onClick={() => setHidden(new Set(hidden).add(job.id))}>✕</button>
               )}
             </div>
             <small>{job.total ? `${job.done}/${job.total} · ` : ''}{job.message}</small>
@@ -96,9 +97,9 @@ export function JobBar() {
   )
 }
 
-/** Start a job and return its id. */
+/** Start a job and return its id (undefined, with the error shown, when it could not start). */
 export const startJob = (type: Job['type'], params: Record<string, unknown> = {}) =>
-  api.post<{ id: number }>('/jobs', { type, params })
+  attempt(api.post<{ id: number }>('/jobs', { type, params }))
 
 export const isRunning = (jobs: Job[], type: Job['type']) =>
   jobs.some(j => j.type === type && (j.status === 'running' || j.status === 'queued'))

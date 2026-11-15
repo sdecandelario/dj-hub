@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api, type ApplyResult, type Batch, type Step } from '../api'
 import { basename, plural } from './ui'
 
@@ -80,6 +80,14 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     await preview(() => api.post<Batch>(`/batches/${result.id}/undo`))
   }
 
+  const open = Boolean(batch || (error && !busy))
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  })
+
   const runnable = batch ? batch.plan.steps.filter(s => s.action !== 'skip') : []
   const skipped = batch ? batch.plan.steps.filter(s => s.action === 'skip') : []
 
@@ -87,10 +95,10 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     <BatchContext.Provider value={{ preview, applied }}>
       {children}
       {(batch || (error && !busy)) && (
-        <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
-          <div className="dialog" role="dialog" aria-modal="true">
+        <div className="overlay">
+          <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="batch-title">
             <header>
-              <h2 style={{ margin: 0 }}>{result ? 'Done' : batch ? 'Check before applying' : 'Cannot plan this change'}</h2>
+              <h2 id="batch-title" style={{ margin: 0 }}>{result ? 'Done' : batch ? 'Check before applying' : 'Cannot plan this change'}</h2>
               <span className="spacer" />
               <button className="ghost" onClick={close} aria-label="Close">✕</button>
             </header>
@@ -117,7 +125,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
                     <div className="group" key={title}>
                       <h4>{title} ({steps.length})</h4>
                       <ul>{steps.map(s => (
-                        <li key={s.source} title={s.source}>
+                        <li key={`${s.source}>${s.dest}`} title={s.source}>
                           {basename(s.source)}
                           {basename(s.dest) !== basename(s.source) && (
                             <div className="renamed" title={s.dest}>→ renamed to <b>{basename(s.dest)}</b></div>
@@ -134,7 +142,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
                   {skipped.length > 0 && (
                     <div className="group">
                       <h4 className="muted">Skipped ({skipped.length})</h4>
-                      <ul>{skipped.map(s => <li key={s.source} className="muted">{basename(s.source)}: {s.note}</li>)}</ul>
+                      <ul>{skipped.map(s => <li key={`${s.source}>${s.dest}`} className="muted">{basename(s.source)}: {s.note}</li>)}</ul>
                     </div>
                   )}
                 </>

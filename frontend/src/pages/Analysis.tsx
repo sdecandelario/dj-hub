@@ -29,12 +29,14 @@ export default function Analysis() {
   const references = data?.references ?? []
   const reference = references.find(r => String(r.id) === refId) ?? references[0]
   const ref = reference?.median_lufs ?? null
-  const source = view === 'current' ? data?.current ?? [] : (runTracks.data ?? []).map(r => ({ ...r, run_id: view }))
+  const source = useMemo(
+    () => view === 'current' ? data?.current ?? [] : (runTracks.data ?? []).map(r => ({ ...r, run_id: view })),
+    [view, data, runTracks.data])
   const rows: Row[] = useMemo(() => {
     const ctx = contextFor(source.filter(r => !r.missing), ref)
     return source.map(r => ({ ...r, delta: isValid(r) && ref !== null ? (r.integrated_lufs as number) - ref : null, verdict: judge(r, ctx) }))
   }, [source, ref])
-  const active = rows.filter(r => !r.missing)
+  const active = useMemo(() => rows.filter(r => !r.missing), [rows])
   const count = (level: Level) => active.filter(r => r.verdict.level === level).length
   const q = search.toLowerCase()
   const sortValue = (r: Row) => sort.key === 'verdict' ? order(r.verdict) * 100 + Math.abs(r.delta ?? 0) : r[sort.key]

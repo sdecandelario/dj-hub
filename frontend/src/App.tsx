@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { api, type Summary } from './api'
 import { BatchProvider } from './components/batch'
+import { ErrorToasts } from './components/errors'
 import { JobBar, JobsProvider } from './components/jobs'
 import Analysis from './pages/Analysis'
 import Discover from './pages/Discover'
@@ -59,6 +60,7 @@ export default function App() {
           </main>
         </div>
         <JobBar />
+        <ErrorToasts />
       </BatchProvider>
     </JobsProvider>
   )

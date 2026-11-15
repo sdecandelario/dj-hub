@@ -24,7 +24,11 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     }
     throw new ApiError(response.status, message)
   }
-  return response.json() as Promise<T>
+  try {
+    return (await response.json()) as T
+  } catch {
+    throw new ApiError(response.status, `Unexpected response from ${method} /api${url} (is the server up to date?)`)
+  }
 }
 
 export const api = {
@@ -61,7 +65,7 @@ export type Step = { action: 'copy' | 'move' | 'skip'; source: string; dest: str
 
 export type Batch = {
   id: number
-  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'legacy'
+  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'legacy' | 'tags' | 'rename'
   status: 'preview' | 'running' | 'applied' | 'partial' | 'undone' | 'discarded' | 'failed'
   label: string
   created_at: string

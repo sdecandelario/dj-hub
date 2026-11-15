@@ -7,6 +7,7 @@ import { HistoryChart } from '../components/charts'
 import { PlayerBar, usePlayer } from '../components/player'
 import { isRunning, startJob, useActiveJobs } from '../components/jobs'
 import { Badge, Empty, ErrorNote, num, plural, StatusBadge, when } from '../components/ui'
+import { attempt } from '../components/errors'
 
 const GENRES = 'Genres', SESSIONS = 'Sessions', INBOX = '00 Inbox'
 
@@ -121,7 +122,7 @@ function Detail({ id, tree, onClose }: { id: number; tree: Tree; onClose: () => 
         <dt>BPM tag</dt><dd>{data.bpm || '—'}</dd>
       </dl>
       <div className="row" style={{ marginBottom: 12 }}>
-        <button className="small" onClick={() => api.post(`/files/${data.id}/reveal`)}>Show in Finder</button>
+        <button className="small" onClick={() => attempt(api.post(`/files/${data.id}/reveal`))}>Show in Finder</button>
         <button className="small" onClick={() => startJob('analyze', { path: data.path })}>Analyze</button>
         <button className="small danger" onClick={trash}>Send to Trash</button>
       </div>
@@ -352,7 +353,7 @@ export default function Library() {
             {files.data && !files.data.length && <Empty>No files here.</Empty>}
           </div>
         </div>
-        {selected && tree.data && <Detail id={selected} tree={tree.data} onClose={() => select(null)} />}
+        {selected && tree.data && <Detail key={selected} id={selected} tree={tree.data} onClose={() => select(null)} />}
       </div>
       {player.track && <div className="bottombar"><PlayerBar player={player} /></div>}
     </>

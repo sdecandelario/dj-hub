@@ -36,8 +36,7 @@ export default function Home() {
       ) : null}
       {empty && (
         <div className="callout info">
-          The app is empty. Import the history from the old projects in <Link to="/settings">Settings</Link>, or
-          run <b>Scan library</b>.
+          The app is empty. Run <b>Scan library</b>, or add playlists in <Link to="/settings">Settings</Link>.
         </div>
       )}
       {data && (

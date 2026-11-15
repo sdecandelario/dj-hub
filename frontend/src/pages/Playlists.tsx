@@ -29,7 +29,7 @@ export default function Playlists() {
     },
   })
 
-  const all = tracks.data ?? []
+  const all = useMemo(() => tracks.data ?? [], [tracks.data])
   const counts = useMemo(() => ({
     missing: all.filter(t => t.status === 'missing' && !t.downloaded).length,
     maybe: all.filter(t => t.status === 'maybe').length,

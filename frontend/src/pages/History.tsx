@@ -3,6 +3,7 @@ import { Fragment, useState } from 'react'
 import { api, type Batch, type Job } from '../api'
 import { useBatch } from '../components/batch'
 import { Badge, ErrorNote, JOB_LABELS, StatusBadge, when } from '../components/ui'
+import { attempt } from '../components/errors'
 
 function BatchOps({ id }: { id: number }) {
   const { data } = useQuery({ queryKey: ['batches', id], queryFn: () => api.get<Batch>(`/batches/${id}`) })
@@ -92,10 +93,10 @@ export default function History() {
                     <td><small>{when(j.started_at ?? j.created_at)}</small></td>
                     <td onClick={e => e.stopPropagation()}>
                       {['interrupted', 'failed', 'cancelled'].includes(j.status) && !j.legacy_id && (
-                        <button className="small" onClick={() => api.post(`/jobs/${j.id}/resume`).then(() => jobs.refetch())}>Resume</button>
+                        <button className="small" onClick={() => attempt(api.post(`/jobs/${j.id}/resume`).then(() => jobs.refetch()))}>Resume</button>
                       )}
                       {['running', 'queued'].includes(j.status) && (
-                        <button className="small" onClick={() => api.post(`/jobs/${j.id}/cancel`)}>Cancel</button>
+                        <button className="small" onClick={() => attempt(api.post(`/jobs/${j.id}/cancel`))}>Cancel</button>
                       )}
                     </td>
                   </tr>
