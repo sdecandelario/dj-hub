@@ -13,11 +13,11 @@ from ..models import File, Job, Measurement
 from .library import register_file
 
 MEASURE_FIELDS = ("status", "error", "integrated_lufs", "true_peak_dbtp", "loudness_range_lu",
-                  "duration_seconds", "codec", "sample_rate_hz", "channels")
+                  "duration_seconds", "codec")
 QUALITY_FIELDS = ("corrupt_frames", "audio_md5", "tag_artist", "tag_title", "album", "year",
                   "bitrate_kbps", "has_art", "hf_gap_17k_db", "hf_gap_19k_db",
                   "loud_lufs", "momentary_max_lufs", "tone_low_db", "tone_mid_db", "tone_presence_db", "tone_air_db")
-DEEP_MARKER = "tone_air_db"  # measurements without it predate the loud-section and tone checks
+DEEP_MARKER = "tone_air_db"  # only stored when the loud-section and tone checks ran
 # What each page needs from a stored measurement before it can reuse it instead of measuring again.
 ANALYSIS_NEEDS = (DEEP_MARKER,)
 REVIEW_NEEDS = ("audio_md5", "hf_gap_19k_db", "corrupt_frames")
@@ -64,12 +64,12 @@ def cached_shas(session, items):
 
 def _usable(m, ffmpeg_version, need):
     extra = m.extra or {}
-    return extra.get("ffmpeg_version") in (None, ffmpeg_version) and all(key in extra for key in need)
+    return extra.get("ffmpeg_version") == ffmpeg_version and all(key in extra for key in need)
 
 
 def reusable_many(session, shas, ffmpeg_version, need=()):
     """{sha: newest good measurement of those bytes} in few queries. The measurement must come from
-    this ffmpeg (or an unknown one) and hold every key in `need` (what the caller wants to show), so work
+    this ffmpeg and hold every key in `need` (what the caller wants to show), so work
     done by the analysis page and by the downloads review can be shared."""
     found = {}
     shas = sorted({s for s in shas if s})

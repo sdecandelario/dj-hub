@@ -71,8 +71,6 @@ class Measurement(Base):
     loudness_range_lu: Mapped[float | None] = mapped_column(Float, nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     codec: Mapped[str] = mapped_column(String, default="")
-    sample_rate_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    channels: Mapped[int | None] = mapped_column(Integer, nullable=True)
     extra: Mapped[dict] = mapped_column(JSON, default=dict)          # quality checks, tags from ffprobe, versions
 
 
@@ -185,7 +183,6 @@ class Candidate(Base):
     because: Mapped[list] = mapped_column(JSON, default=list)           # seed artists that point to it
     you_own: Mapped[int] = mapped_column(Integer, default=0)            # tracks by this artist already owned
     check: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # a similar track you may own
-    source: Mapped[str] = mapped_column(String, default="lastfm")
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 

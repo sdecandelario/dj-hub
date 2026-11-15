@@ -86,7 +86,7 @@ def measure(path):
     """Integrated loudness, true peak and loudness range of the first audio stream."""
     row = {'filename': os.path.basename(path), 'path': str(path), 'status': 'ERROR', 'error': '',
            'integrated_lufs': None, 'true_peak_dbtp': None, 'loudness_range_lu': None,
-           'duration_seconds': None, 'codec': '', 'sample_rate_hz': None, 'channels': None}
+           'duration_seconds': None, 'codec': ''}
     try:
         probe_proc = run(['ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_streams', '-show_format',
                           '-of', 'json', str(path)])
@@ -97,8 +97,6 @@ def measure(path):
         row.update({
             'duration_seconds': _number(stream.get('duration', info.get('format', {}).get('duration'))),
             'codec': stream.get('codec_name', ''),
-            'sample_rate_hz': int(stream['sample_rate']) if str(stream.get('sample_rate', '')).isdigit() else None,
-            'channels': stream.get('channels'),
         })
         proc = run(['ffmpeg', '-nostdin', '-hide_banner', '-i', str(path), '-map', '0:a:0', '-vn', '-sn', '-dn',
                     '-af', 'loudnorm=print_format=json', '-f', 'null', '-'])
@@ -234,8 +232,7 @@ def analyze(path):
     the audio-only hash, the transcode check, and (for files that decoded) the loud-section level and tonal
     balance. The analysis page and the downloads review both store this, so either can reuse the other's work."""
     row = measure(path)
-    result = {k: row.get(k) for k in LOUDNESS_FIELDS + ('status', 'error', 'duration_seconds', 'codec',
-                                                         'sample_rate_hz', 'channels')}
+    result = {k: row.get(k) for k in LOUDNESS_FIELDS + ('status', 'error', 'duration_seconds', 'codec')}
     result['corrupt_frames'] = len([line for line in (row.get('error') or '').splitlines() if line.strip()])
     result['audio_md5'] = audio_hash(path)
     result.update(probe(path))

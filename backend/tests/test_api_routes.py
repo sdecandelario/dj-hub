@@ -170,13 +170,12 @@ def test_discover_calls_run_in_parallel_and_keep_their_order():
         discovery._map(lambda n: (_ for _ in ()).throw(ValueError(n)), ["a", "b"])
 
 
-def test_only_the_latest_reviews_are_kept(env):
+def test_only_the_latest_review_is_kept(env):
     from app.jobs import runner
     from app.models import Review
-    from app.services import downloads
 
     fake_audio(env.downloads / "Boy Harsher - Pain.mp3")
-    for _ in range(downloads.KEEP_REVIEWS + 3):
+    for _ in range(3):
         runner.run_sync("review_downloads", {}, echo=None)
     with session_scope() as s:
-        assert s.query(Review).count() == downloads.KEEP_REVIEWS
+        assert s.query(Review).count() == 1

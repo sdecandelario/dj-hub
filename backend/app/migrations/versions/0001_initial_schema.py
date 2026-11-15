@@ -41,7 +41,6 @@ def upgrade():
     sa.Column('because', sa.JSON(), nullable=False),
     sa.Column('you_own', sa.Integer(), nullable=False),
     sa.Column('check', sa.JSON(), nullable=True),
-    sa.Column('source', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
@@ -178,8 +177,6 @@ def upgrade():
     sa.Column('loudness_range_lu', sa.Float(), nullable=True),
     sa.Column('duration_seconds', sa.Float(), nullable=True),
     sa.Column('codec', sa.String(), nullable=False),
-    sa.Column('sample_rate_hz', sa.Integer(), nullable=True),
-    sa.Column('channels', sa.Integer(), nullable=True),
     sa.Column('extra', sa.JSON(), nullable=False),
     sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')

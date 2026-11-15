@@ -123,8 +123,6 @@ export type Measurement = {
   loudness_range_lu: number | null
   duration_seconds: number | null
   codec: string
-  sample_rate_hz: number | null
-  channels: number | null
   corrupt_frames?: number | null
   bitrate_kbps?: number | null
   hf_gap_17k_db?: number | null
@@ -181,7 +179,6 @@ export type Version = {
   loudness_range_lu: number | null
   duration_seconds: number | null
   codec: string
-  sample_rate_hz: number | null
   bitrate_kbps: number | null
   corrupt_frames: number
   tag_artist: string
