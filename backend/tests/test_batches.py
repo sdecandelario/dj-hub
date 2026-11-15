@@ -393,3 +393,45 @@ def test_recovery_keeps_moves_that_happened_and_drops_those_that_did_not(env):
     with session_scope() as s:
         assert s.query(Batch).one().status == "partial"
         assert s.query(FileOp).count() == 1
+
+
+def test_intake_notes_the_same_audio_even_when_the_library_copy_was_retagged(env):
+    import shutil
+
+    from app.core.tags import write_tags
+    from .conftest import real_audio
+
+    download = real_audio(env.downloads / "Boy Harsher - Pain.mp3", frequency=300)
+    library_copy = env.root / "Genres" / "EBM & Industrial" / "Boy Harsher - Pain.mp3"
+    library_copy.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(download, library_copy)
+    write_tags(library_copy, {"artist": "Boy Harsher", "title": "Pain", "album": "Careful"})   # new tag bytes
+    other = real_audio(env.root / "Genres" / "EBM & Industrial" / "Other - Pain.mp3", frequency=900)
+    write_tags(other, {"artist": "Boy Harsher", "title": "Pain"})
+    p = plan("intake", {"picks": [{"song": "Boy Harsher - Pain", "keep": str(download), "reject": []}]})
+    assert any("same audio is already in the library" in n and library_copy.name in n and "Other" not in n.split(":", 1)[1].split("possible")[0]
+               for n in p.notes), p.notes
+    assert any("possible upgrade" in n and other.name in n for n in p.notes)
+
+
+def test_legacy_import_skips_damaged_run_files(env):
+    from app.services import legacy
+    folder = env.tmp / "runs"
+    folder.mkdir()
+    (folder / "bad.json").write_text("{not json", encoding="utf-8")
+    (folder / "short.json").write_text('{"schema_version": 2}', encoding="utf-8")
+    with session_scope() as s:
+        assert legacy.import_runs(s, folder) == 0
+
+
+def test_spotify_login_states_expire_and_are_bounded(client, monkeypatch):
+    from app.api import playlists as api
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "secret")
+    api._login_states.clear()
+    api._login_states["old"] = -10_000.0
+    assert client.get("/api/spotify/callback?state=old&code=x").status_code == 404   # expired
+    for _ in range(api.MAX_LOGIN_STATES + 5):
+        assert client.get("/api/spotify/login", follow_redirects=False).status_code in (302, 307)
+    assert len(api._login_states) == api.MAX_LOGIN_STATES
+    api._login_states.clear()

@@ -52,8 +52,11 @@ def _int(value):
 def import_runs(session, folder):
     added = 0
     for path in sorted(Path(folder).glob("*.json")):
-        record = json.loads(path.read_text(encoding="utf-8"))
-        if record.get("schema_version") != 2:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("schema_version") != 2 or not {"id", "date", "config", "tracks"} <= set(record):
+                continue
+        except (OSError, ValueError, AttributeError):   # one damaged old file must not stop the import
             continue
         if session.scalar(select(Job).where(Job.legacy_id == record["id"])):
             continue

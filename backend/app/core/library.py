@@ -18,7 +18,7 @@ import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .audio import quick_fingerprint
+from .audio import audio_hash, quick_fingerprint
 from .names import guess_from_filename, normalize, song_folder_name, track_file_name
 from .tags import read_tags, write_tags
 
@@ -364,6 +364,16 @@ def _inside_sources(sources, raw):
     return resolved
 
 
+def _same_audio(path, candidates):
+    """Library paths among `candidates` whose encoded audio is identical to `path` (tags may differ)."""
+    if not candidates:
+        return []
+    wanted = audio_hash(path)
+    if not wanted:
+        return []
+    return [t["path"] for t in candidates if audio_hash(t["abs"]) == wanted]
+
+
 def plan_intake(root, sources, tracks, picks):
     """Reviewed downloads: the kept version to 00 Inbox, the others to 00 Rejected/<song>.
 
@@ -379,8 +389,8 @@ def plan_intake(root, sources, tracks, picks):
     by_fp = {t["fp"]: t["path"] for t in library}
     by_name = {}
     for t in library:
-        if t["kind"] == "genre" and t["title"]:
-            by_name.setdefault((normalize(t["artist"]), normalize(t["title"])), []).append(t["path"])
+        if t["title"]:
+            by_name.setdefault((normalize(t["artist"]), normalize(t["title"])), []).append(t)
     plan = Plan("intake")
     taken, seen = set(), set()
     for pick in picks:
@@ -435,8 +445,12 @@ def plan_intake(root, sources, tracks, picks):
                 else:
                     info = describe_file(path)
                     key = (normalize(info["artist"]), normalize(info["title"]))
-                    if key in by_name:
-                        plan.notes.append(f"{song}: possible upgrade of {', '.join(by_name[key])}")
+                    same = _same_audio(path, by_name.get(key, []))
+                    other = [t["path"] for t in by_name.get(key, []) if t["path"] not in same]
+                    if same:   # the library copy was re-tagged, so its fingerprint differs; the audio does not
+                        plan.notes.append(f"{song}: the same audio is already in the library: {', '.join(same)}")
+                    if other:
+                        plan.notes.append(f"{song}: possible upgrade of {', '.join(other)}")
         plan.steps += own_steps
     return plan
 

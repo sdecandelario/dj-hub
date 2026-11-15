@@ -1,6 +1,7 @@
 """Spotify playlists, their match against the library, 'downloaded' ticks and the Spotify login."""
 import html
 import secrets
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,7 +15,9 @@ from ..services import playlists
 from . import get_session
 
 router = APIRouter()
-_login_states = set()
+_login_states = {}   # state -> time asked, oldest dropped first (a login must finish within minutes)
+MAX_LOGIN_STATES = 20
+LOGIN_STATE_SECONDS = 600
 
 
 class PlaylistBody(BaseModel):
@@ -98,15 +101,17 @@ def spotify_login():
     if not (client_id and client_secret):
         raise HTTPException(400, "Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET before starting the app")
     state = secrets.token_urlsafe(16)
-    _login_states.add(state)
+    _login_states[state] = time.monotonic()
+    while len(_login_states) > MAX_LOGIN_STATES:
+        _login_states.pop(next(iter(_login_states)))
     return RedirectResponse(spotify.authorize_url(client_id, state, spotify.APP_REDIRECT_URI))
 
 
 @router.get("/spotify/callback")
 def spotify_callback(state: str = "", code: str | None = None, error: str | None = None):
-    if state not in _login_states:
-        raise HTTPException(404, "Unknown login")
-    _login_states.discard(state)
+    asked = _login_states.pop(state, None)
+    if asked is None or time.monotonic() - asked > LOGIN_STATE_SECONDS:
+        raise HTTPException(404, "Unknown or expired login")
     if not code:
         return HTMLResponse(f"<p>Spotify login failed ({html.escape(str(error))}). You can close this tab.</p>", status_code=400)
     try:
