@@ -181,8 +181,10 @@ def overview(session):
         for t in tracks:
             m = matches.get(t.spotify_id)
             status = m.status if m else "missing"
-            counts[status] += 1
-            if status != "have" and t.spotify_id in marks:
+            downloaded = status != "have" and t.spotify_id in marks
+            if not (status == "missing" and downloaded):   # a ticked track counts as downloaded, not missing
+                counts[status] += 1
+            if downloaded:
                 counts["downloaded"] += 1
             if status != "have" and m and m.download_song_key:
                 counts["waiting"] += 1

@@ -189,3 +189,16 @@ def test_analysis_keeps_loud_section_and_tone_checks_and_remeasures_old_results(
     third = runner.run_sync("analyze", {"path": str(env.root)}, echo=None)
     with session_scope() as s:
         assert analysis.run_tracks(s, third)[0]["origin"] == "reused"
+
+
+def test_ticked_track_counts_as_downloaded_not_missing(client, env):
+    with session_scope() as s:
+        s.add(Playlist(id="P" * 22, name="Test"))
+        for i, sid in enumerate("ab"):
+            s.add(PlaylistTrack(playlist_id="P" * 22, position=i, spotify_id=sid, title=f"T{sid}", artists=["X"]))
+    runner.run_sync("match_playlists", {}, echo=None)
+    assert client.get("/api/summary").json()["missing"] == 2
+    client.put("/api/playlists/marks/a", json={"downloaded": True})
+    counts = client.get("/api/playlists").json()[0]["counts"]
+    assert counts["missing"] == 1 and counts["downloaded"] == 1
+    assert client.get("/api/summary").json()["missing"] == 1

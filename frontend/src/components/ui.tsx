@@ -84,3 +84,14 @@ export function downloadCsv(filename: string, rows: (string | number)[][]) {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/** Props that make a clickable table row work with the keyboard too (Enter or Space on the row itself). */
+export const clickableRow = (onActivate: () => void, selected?: boolean) => ({
+  className: `clickable${selected ? ' selected' : ''}`,
+  tabIndex: 0,
+  'aria-selected': selected,
+  onClick: onActivate,
+  onKeyDown: (e: React.KeyboardEvent) => {
+    if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onActivate() }
+  },
+})

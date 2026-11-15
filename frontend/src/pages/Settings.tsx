@@ -110,7 +110,7 @@ export default function SettingsPage() {
                 <td>{p.counts.total}{p.possibly_truncated && <> <Badge tone="warn">first 100</Badge></>}</td>
                 <td><small>{when(p.refreshed_at)}</small></td>
                 <td><input type="checkbox" checked={p.tracked} onChange={e => patch(p.id, { tracked: e.target.checked })} /></td>
-                <td><button className="small danger" onClick={() => remove(p.id)}>Remove</button></td>
+                <td><button className="small danger" onClick={() => { if (window.confirm(`Remove "${p.name || p.id}" and its tracks from the app? Spotify is not changed.`)) remove(p.id) }}>Remove</button></td>
               </tr>
             ))}
           </tbody>

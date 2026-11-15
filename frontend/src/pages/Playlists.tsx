@@ -72,6 +72,7 @@ export default function Playlists() {
         </button>
       </div>
       <ErrorNote error={lists.error || tracks.error} />
+      {(lists.isLoading || tracks.isLoading) && <Empty>Loading…</Empty>}
       {lists.data && !lists.data.length && (
         <Empty>No playlists yet. Add them in <Link to="/settings">Settings</Link>.</Empty>
       )}

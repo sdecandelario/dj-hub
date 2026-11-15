@@ -66,7 +66,7 @@ def summary(session=Depends(get_session, scope="function")):
         "inbox": count(*library, File.kind == "inbox"),
         "rejected": count(*library, File.kind == "rejected"),
         "unsorted": count(*library, File.kind == "unsorted"),
-        "missing": sum(m.status == "missing" for m in matches),
+        "missing": sum(m.status == "missing" and m.spotify_id not in marks for m in matches),
         "check": sum(m.status == "maybe" for m in matches),
         "waiting_downloads": sum(m.status != "have" and bool(m.download_song_key) for m in matches),
         "marked_downloaded": sum(m.status != "have" and m.spotify_id in marks for m in matches),

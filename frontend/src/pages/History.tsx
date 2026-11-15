@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
 import { api, type Batch, type Job } from '../api'
 import { useBatch } from '../components/batch'
-import { Badge, ErrorNote, JOB_LABELS, StatusBadge, when } from '../components/ui'
+import { Badge, clickableRow, ErrorNote, JOB_LABELS, StatusBadge, when } from '../components/ui'
 import { attempt } from '../components/errors'
 
 function BatchOps({ id }: { id: number }) {
@@ -59,7 +59,7 @@ export default function History() {
             <tbody>
               {batches.data?.map(b => (
                 <Fragment key={b.id}>
-                  <tr className="clickable" onClick={() => setOpen(open === b.id ? null : b.id)}>
+                  <tr {...clickableRow(() => setOpen(open === b.id ? null : b.id))}>
                     <td>{b.id}</td>
                     <td>{b.label}{b.legacy_id && <> <Badge>dj-library skill</Badge></>}
                       {b.error && <><br /><small className="muted">{b.error}</small></>}</td>
@@ -85,7 +85,7 @@ export default function History() {
             <tbody>
               {jobs.data?.map(j => (
                 <Fragment key={j.id}>
-                  <tr className="clickable" onClick={() => setOpen(open === j.id ? null : j.id)}>
+                  <tr {...clickableRow(() => setOpen(open === j.id ? null : j.id))}>
                     <td>{j.id}</td>
                     <td>{JOB_LABELS[j.type] ?? j.type}{(Array.isArray(j.params.paths) || typeof j.params.path === 'string') && <><br /><small className="mono">{Array.isArray(j.params.paths) ? j.params.paths.join('; ') : String(j.params.path)}</small></>}</td>
                     <td><StatusBadge status={j.status} /></td>
