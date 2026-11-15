@@ -17,6 +17,8 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
+from ..config import get_config
+
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback"   # terminal login (djhub spotify-login)
 APP_REDIRECT_URI = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8000/api/spotify/callback")
 SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative"
@@ -102,27 +104,37 @@ def _oauth_error(error):
         return None
 
 
-_session = {}   # the login made in this run of the app, until the next restart
+def _read_refresh_token():
+    """Return the saved refresh token, or None if the file is missing or damaged."""
+    try:
+        data = json.loads(token_path().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        warn("Saved Spotify login is damaged; logging in again")
+        return None
+    token = data.get("refresh_token") if isinstance(data, dict) else None
+    return token if isinstance(token, str) and token else None
 
 
-def refresh_token():
-    """The Spotify login: made in this run, or SPOTIFY_REFRESH_TOKEN from the environment. None if neither."""
-    return _session.get("refresh") or os.environ.get("SPOTIFY_REFRESH_TOKEN", "").strip() or None
+def token_path():
+    """Where the login is kept: with the rest of the app's data, next to the database."""
+    return get_config().db_path.parent / "spotify_token.json"
 
 
-def has_login():
-    return refresh_token() is not None
+def has_saved_login():
+    return _read_refresh_token() is not None
 
 
-def has_permanent_login():
-    """True when the login survives a restart, because it is in the environment (~/.zshrc)."""
-    return bool(os.environ.get("SPOTIFY_REFRESH_TOKEN", "").strip())
-
-
-def remember_login(token):
-    """Use this login until the app restarts. Returns the line that keeps it: add it to ~/.zshrc."""
-    _session["refresh"] = token
-    return f"export SPOTIFY_REFRESH_TOKEN={token}"
+def _save_refresh_token(refresh_token):
+    """Write the token file atomically, readable only by the current user."""
+    path = token_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump({"refresh_token": refresh_token}, handle)
+    os.replace(tmp_path, path)
 
 
 def authorize_url(client_id, state, redirect_uri):
@@ -136,13 +148,14 @@ def authorize_url(client_id, state, redirect_uri):
 
 
 def exchange_code(code, redirect_uri):
-    """Finish the in-app login: trade the code for tokens. Returns the line that keeps the login (for ~/.zshrc)."""
+    """Finish the in-app login: trade the code for tokens and save the refresh token."""
     client_id, client_secret = app_keys()
     if not (client_id and client_secret):
         raise SpotifyLoginError("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set")
     data = _request_token(client_id, client_secret, {
         "grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri})
-    return remember_login(data["refresh_token"])
+    _save_refresh_token(data["refresh_token"])
+    return data["access_token"]
 
 
 def _login_in_browser(client_id, client_secret):
@@ -198,33 +211,30 @@ def _login_in_browser(client_id, client_secret):
 def spotify_token(interactive=None):
     """Return a user access token, or None when no app keys are set.
 
-    Reuses the login from SPOTIFY_REFRESH_TOKEN (or made earlier in this run). A browser login only happens
-    in an interactive terminal; the web app uses its own login page instead."""
+    Reuses the saved refresh token. A browser login only happens in an interactive
+    terminal; the web app uses its own login page instead."""
     client_id, client_secret = app_keys()
     if not (client_id and client_secret):
         return None
     if interactive is None:
         interactive = sys.stdin.isatty()
-    saved = refresh_token()
-    if saved:
+    refresh_token = _read_refresh_token()
+    if refresh_token:
         try:
             data = _request_token(client_id, client_secret,
-                                  {"grant_type": "refresh_token", "refresh_token": saved})
-            if data.get("refresh_token") and data["refresh_token"] != saved:
-                _session["refresh"] = data["refresh_token"]
-                warn("Spotify issued a new login; connect again in Settings and update SPOTIFY_REFRESH_TOKEN")
+                                  {"grant_type": "refresh_token", "refresh_token": refresh_token})
+            _save_refresh_token(data.get("refresh_token") or refresh_token)
             return data["access_token"]
         except urllib.error.HTTPError as error:
             reason = _oauth_error(error)
             if reason != "invalid_grant":
                 raise SpotifyLoginError(
-                    f"Spotify refused the login ({error.code} {reason or error.reason})") from error
-            warn("The Spotify login was revoked or expired; logging in again")
+                    f"Spotify refused the saved login ({error.code} {reason or error.reason})") from error
+            warn("Saved Spotify login was revoked or expired; logging in again")
     if not interactive:
         raise SpotifyLoginError("a Spotify login is needed: use Connect Spotify in Settings")
     data = _login_in_browser(client_id, client_secret)
-    print("To keep this login, add this line to ~/.zshrc:")
-    print(f"  {remember_login(data['refresh_token'])}")
+    _save_refresh_token(data["refresh_token"])
     return data["access_token"]
 
 

@@ -75,9 +75,6 @@ export default function SettingsPage() {
           {spotify.data?.keys && (
             <>
               <p>{spotify.data.logged_in ? <Badge tone="ok">Connected</Badge> : <Badge tone="warn">Not connected</Badge>}</p>
-              {spotify.data.logged_in && !spotify.data.permanent && (
-                <p className="muted"><small>Only until the app restarts. Add <code>SPOTIFY_REFRESH_TOKEN</code> to <code>~/.zshrc</code> to keep it (Connect again shows the line).</small></p>
-              )}
               <p><a className="button" href="/api/spotify/login">{spotify.data.logged_in ? 'Connect again' : 'Connect Spotify'}</a></p>
               <small className="muted">
                 Once, add this redirect URI to your app at developer.spotify.com: <code>{spotify.data.redirect_uri}</code>

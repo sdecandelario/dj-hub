@@ -2,11 +2,14 @@ import io
 import json
 import os
 import socket
+import stat
+import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from unittest import mock
 
 import app.integrations.spotify as c
@@ -23,66 +26,64 @@ def api_track(track_id, name, key="item", kind="track"):
 
 class TokenTest(unittest.TestCase):
     def setUp(self):
-        env = {"SPOTIFY_CLIENT_ID": "id", "SPOTIFY_CLIENT_SECRET": "secret", "SPOTIFY_REFRESH_TOKEN": ""}
-        patcher = mock.patch.dict(os.environ, env)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        c._session.clear()
-        self.addCleanup(c._session.clear)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        token_path = Path(self.tmp.name) / "sub" / "spotify_token.json"
+        for patcher in (
+            mock.patch.object(c, "token_path", return_value=token_path),
+            mock.patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "id", "SPOTIFY_CLIENT_SECRET": "secret"}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.token_path = token_path
 
-    def login_with(self, token):
-        os.environ["SPOTIFY_REFRESH_TOKEN"] = token
+    def save(self, text):
+        self.token_path.parent.mkdir(parents=True, exist_ok=True)
+        self.token_path.write_text(text, encoding="utf-8")
 
     def test_no_keys_returns_none(self):
         with mock.patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "", "SPOTIFY_CLIENT_SECRET": ""}):
             self.assertIsNone(c.spotify_token())
 
-    def test_the_login_comes_from_the_environment(self):
-        self.assertFalse(c.has_login())
-        self.login_with("old")
-        self.assertTrue(c.has_login() and c.has_permanent_login())
-        with mock.patch.object(c, "_request_token", return_value={"access_token": "A"}) as req:
+    def test_refresh_saves_rotated_token_with_private_mode(self):
+        self.save(json.dumps({"refresh_token": "old"}))
+        with mock.patch.object(c, "_request_token", return_value={"access_token": "A", "refresh_token": "new"}) as req:
             self.assertEqual(c.spotify_token(interactive=False), "A")
         self.assertEqual(req.call_args[0][2]["refresh_token"], "old")
+        self.assertEqual(json.loads(self.token_path.read_text())["refresh_token"], "new")
+        self.assertEqual(stat.S_IMODE(self.token_path.stat().st_mode), 0o600)
+        self.assertFalse(self.token_path.with_name(self.token_path.name + ".tmp").exists())
 
-    def test_a_rotated_token_is_used_for_the_rest_of_the_run(self):
-        self.login_with("old")
-        with mock.patch.object(c, "_request_token", return_value={"access_token": "A", "refresh_token": "tok-ROTATED"}), \
-                mock.patch("sys.stderr", io.StringIO()) as err:
+    def test_refresh_keeps_token_when_not_rotated(self):
+        self.save(json.dumps({"refresh_token": "old"}))
+        with mock.patch.object(c, "_request_token", return_value={"access_token": "A"}):
             c.spotify_token(interactive=False)
-        self.assertNotIn("tok-ROTATED", err.getvalue())   # the warning never prints the token
-        self.assertEqual(c.refresh_token(), "tok-ROTATED")
+        self.assertEqual(json.loads(self.token_path.read_text())["refresh_token"], "old")
 
-    def test_an_unchanged_token_stays_as_it_was(self):
-        self.login_with("old")
-        with mock.patch.object(c, "_request_token", return_value={"access_token": "A", "refresh_token": "old"}):
-            c.spotify_token(interactive=False)
-        self.assertEqual(c.refresh_token(), "old")
-        self.assertNotIn("refresh", c._session)
-
-    def test_a_login_made_here_lasts_until_restart_and_gives_the_line_to_keep_it(self):
-        self.assertEqual(c.remember_login("R"), "export SPOTIFY_REFRESH_TOKEN=R")
-        self.assertTrue(c.has_login() and not c.has_permanent_login())
-
-    def test_no_login_logs_in_in_the_browser_and_prints_how_to_keep_it(self):
-        with mock.patch.object(c, "_request_token") as req, \
-                mock.patch.object(c, "_login_in_browser", return_value={"access_token": "B", "refresh_token": "R"}), \
-                mock.patch("sys.stdout", io.StringIO()) as out:
-            self.assertEqual(c.spotify_token(interactive=True), "B")
-        req.assert_not_called()
-        self.assertIn("export SPOTIFY_REFRESH_TOKEN=R", out.getvalue())
-        self.assertEqual(c.refresh_token(), "R")
+    def test_damaged_or_missing_token_logs_in_again(self):
+        for text in ("{not json", json.dumps({"other": 1}), json.dumps(["x"]), None):
+            with self.subTest(text=text):
+                if text is None:
+                    self.token_path.unlink(missing_ok=True)
+                else:
+                    self.save(text)
+                with mock.patch.object(c, "_request_token") as req, \
+                        mock.patch.object(c, "_login_in_browser", return_value={"access_token": "B", "refresh_token": "R"}), \
+                        mock.patch("sys.stderr", io.StringIO()):
+                    self.assertEqual(c.spotify_token(interactive=True), "B")
+                req.assert_not_called()
+                self.assertEqual(json.loads(self.token_path.read_text())["refresh_token"], "R")
 
     def test_revoked_token_logs_in_again(self):
-        self.login_with("old")
+        self.save(json.dumps({"refresh_token": "old"}))
         with mock.patch.object(c, "_request_token", side_effect=http_error(400, {"error": "invalid_grant"})), \
                 mock.patch.object(c, "_login_in_browser", return_value={"access_token": "B", "refresh_token": "R"}) as login, \
-                mock.patch("sys.stderr", io.StringIO()), mock.patch("sys.stdout", io.StringIO()):
+                mock.patch("sys.stderr", io.StringIO()):
             self.assertEqual(c.spotify_token(interactive=True), "B")
         login.assert_called_once()
 
     def test_other_refresh_errors_do_not_open_browser(self):
-        self.login_with("old")
+        self.save(json.dumps({"refresh_token": "old"}))
         for error in (http_error(400, {"error": "invalid_client"}), http_error(500), http_error(429)):
             with self.subTest(code=error.code), \
                     mock.patch.object(c, "_request_token", side_effect=error), \

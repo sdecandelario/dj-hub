@@ -27,7 +27,7 @@ Without keys, the public embed page is read (first 100 tracks per playlist). For
 
 1. In your app at https://developer.spotify.com/dashboard add the redirect URI `http://127.0.0.1:8000/api/spotify/callback`.
 2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zshrc`).
-3. Settings → **Connect Spotify**. The page that follows shows one line, `export SPOTIFY_REFRESH_TOKEN=...`. Add it to `~/.zshrc` and restart the app to keep the login. Without it the login lasts until the app restarts.
+3. Settings → **Connect Spotify**. The login is saved in `data/spotify_token.json` (git-ignored, readable only by you).
 
 ## Last.fm
 
