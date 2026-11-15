@@ -188,9 +188,10 @@ def test_batched_lookups_match_the_single_ones(env):
     with session_scope() as s:
         analysis.cached_shas(s, items)
         assert [i["sha256"] for i in items] == ["aaa", None, None]   # b changed size, none is unknown
-        found = analysis.reusable_many(s, ["aaa", "bbb", None], True, "v1")
+        found = analysis.reusable_many(s, ["aaa", "bbb", None], "v1")
         assert set(found) == {"aaa"}   # bbb was measured with another ffmpeg
-        assert found["aaa"].id == analysis.reusable(s, "aaa", True, "v1").id
+        assert found["aaa"].id == analysis.reusable(s, "aaa", "v1").id
+        assert analysis.reusable(s, "aaa", "v1", need=("audio_md5",)) is None   # not measured with the md5
 
 
 def test_rms_levels_parser():

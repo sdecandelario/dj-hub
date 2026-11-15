@@ -88,7 +88,7 @@ def _measure(ctx, items, versions, workers):
         if not item["sha256"]:
             item["sha256"] = audio.sha256_file(item["path"])
     with session_scope() as s:
-        old = analysis.reusable_many(s, [i["sha256"] for i in items], True, versions["ffmpeg_version"])
+        old = analysis.reusable_many(s, [i["sha256"] for i in items], versions["ffmpeg_version"], analysis.REVIEW_NEEDS)
         todo = []
         for item in items:
             if item["sha256"] in old:

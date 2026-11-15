@@ -229,24 +229,18 @@ def tonal_balance(path):
             for (name, _), level in zip(TONE_BANDS, levels[1:])}
 
 
-def quality(path, measured):
-    """Everything beyond loudness that the analysis keeps: file facts, decode errors, transcode
-    check, loud-section level and tonal balance. `measured` is the result of measure()."""
-    result = {'corrupt_frames': len([l for l in (measured.get('error') or '').splitlines() if l.strip()])}
-    result.update(probe(path))
-    result.update(high_frequency(path))
-    result.update(loud_sections(path))
-    result.update(tonal_balance(path))
-    return result
-
-
 def analyze(path):
-    """Loudness plus the quality checks used to pick the best download."""
+    """Everything the app measures about one file, in one place: loudness, file facts, decode errors,
+    the audio-only hash, the transcode check, and (for files that decoded) the loud-section level and tonal
+    balance. The analysis page and the downloads review both store this, so either can reuse the other's work."""
     row = measure(path)
     result = {k: row.get(k) for k in LOUDNESS_FIELDS + ('status', 'error', 'duration_seconds', 'codec',
                                                          'sample_rate_hz', 'channels')}
-    result['corrupt_frames'] = len([l for l in (row.get('error') or '').splitlines() if l.strip()])
+    result['corrupt_frames'] = len([line for line in (row.get('error') or '').splitlines() if line.strip()])
     result['audio_md5'] = audio_hash(path)
     result.update(probe(path))
     result.update(high_frequency(path))
+    if result['status'] == 'OK':
+        result.update(loud_sections(path))
+        result.update(tonal_balance(path))
     return result

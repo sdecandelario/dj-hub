@@ -18,6 +18,9 @@ QUALITY_FIELDS = ("corrupt_frames", "audio_md5", "tag_artist", "tag_title", "alb
                   "bitrate_kbps", "has_art", "hf_gap_17k_db", "hf_gap_19k_db",
                   "loud_lufs", "momentary_max_lufs", "tone_low_db", "tone_mid_db", "tone_presence_db", "tone_air_db")
 DEEP_MARKER = "tone_air_db"  # measurements without it predate the loud-section and tone checks
+# What each page needs from a stored measurement before it can reuse it instead of measuring again.
+ANALYSIS_NEEDS = (DEEP_MARKER,)
+REVIEW_NEEDS = ("audio_md5", "hf_gap_19k_db", "corrupt_frames")
 
 
 def measurement_row(m):
@@ -59,33 +62,28 @@ def cached_shas(session, items):
         item["sha256"] = row.sha256 if ok else None
 
 
-def reusable_many(session, shas, full, ffmpeg_version):
-    """{sha: newest good measurement of those bytes with this ffmpeg (or an unknown one)} in few queries.
-    Same rule as `reusable` for a single hash (without `deep`)."""
+def _usable(m, ffmpeg_version, need):
+    extra = m.extra or {}
+    return extra.get("ffmpeg_version") in (None, ffmpeg_version) and all(key in extra for key in need)
+
+
+def reusable_many(session, shas, ffmpeg_version, need=()):
+    """{sha: newest good measurement of those bytes} in few queries. The measurement must come from
+    this ffmpeg (or an unknown one) and hold every key in `need` (what the caller wants to show), so work
+    done by the analysis page and by the downloads review can be shared."""
     found = {}
     shas = sorted({s for s in shas if s})
     for start in range(0, len(shas), 500):
         query = select(Measurement).where(Measurement.sha256.in_(shas[start:start + 500]), Measurement.status == "OK")
-        if full:
-            query = query.where(Measurement.full.is_(True))
         for m in session.scalars(query.order_by(Measurement.id.desc())).all():
-            if m.sha256 not in found and (m.extra or {}).get("ffmpeg_version") in (None, ffmpeg_version):
+            if m.sha256 not in found and _usable(m, ffmpeg_version, need):
                 found[m.sha256] = m
     return found
 
 
-def reusable(session, sha, full, ffmpeg_version, deep=False):
-    """A previous good measurement of the same bytes with the same ffmpeg. With deep=True, only one
-    that also has the loud-section and tonal-balance checks (older ones are measured again)."""
-    query = select(Measurement).where(Measurement.sha256 == sha, Measurement.status == "OK")
-    if full:
-        query = query.where(Measurement.full.is_(True))
-    for m in session.scalars(query.order_by(Measurement.id.desc())).all():
-        if deep and DEEP_MARKER not in (m.extra or {}):
-            continue
-        if (m.extra or {}).get("ffmpeg_version") in (None, ffmpeg_version):
-            return m
-    return None
+def reusable(session, sha, ffmpeg_version, need=()):
+    """A previous good measurement of the same bytes with the same ffmpeg that holds the `need` keys."""
+    return reusable_many(session, [sha], ffmpeg_version, need).get(sha)
 
 
 def collect_paths(sources):
@@ -162,12 +160,10 @@ def run_analysis(ctx):
         sha = sha or audio.sha256_file(path)
         if ctx.params.get("reuse", True):
             with session_scope() as s:
-                old = reusable(s, sha, False, versions["ffmpeg_version"], deep=True)
+                old = reusable(s, sha, versions["ffmpeg_version"], ANALYSIS_NEEDS)
                 if old:
                     return path, stat, sha, measurement_row(old), True
-        result = audio.measure(path)
-        if result["status"] == "OK":
-            result.update(audio.quality(path, result))
+        result = audio.analyze(path)
         after = path.stat()
         if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
             result.update(status="ERROR", error="File changed during analysis")
