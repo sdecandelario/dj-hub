@@ -30,6 +30,7 @@ Artist and title tags use Spotify's spelling (see the profiles below).
 - Renaming a genre folder on request is the one exception: rename the directory itself, then rescan (`djhub scan-library`). The same goes when the user changes the library in Finder.
 - Nothing is deleted by Claude; removals go to the Trash. `djhub remove` refuses a song's only genre copy; if the user wants it gone, they delete it themselves in Finder and Claude rescans.
 - Genre folders are organized by music genre first, never by language. Scenes that are a genre of their own, like Spanish 80's & Movida, are the exception.
+- Genre folders stay generic, not super specific: a few broad folders, each holding songs that play well together, rather than one folder per micro-genre. Prefer merging similar styles over creating a new folder, and do not propose a new folder for a handful of songs without asking. A folder name should say what is inside in plain words (for example `Electro & Eurodance`, `House & French Touch`).
 - The user knows Rekordbox works by file path. When they ask to reorganize or rename folders, do not warn about tracks showing as missing.
 
 ## Working in this project
