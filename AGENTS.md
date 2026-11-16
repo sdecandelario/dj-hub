@@ -13,9 +13,24 @@ DJ Hub is a personal tool: one user, one Mac, never in production and never shar
 
 Use English for all project documentation, code identifiers, comments, filenames, schema fields, CLI messages, and UI text. Preserve original track titles, artist names, source paths, and historical provenance verbatim.
 
-Audio analysis is read-only. Never modify music files, tags, or the Rekordbox library, with one exception: when a batch moves a kept download to 00 Inbox, it writes the artist and title ID3 tags (and fills an empty album or year from another version of the song), so Rekordbox shows them correctly. A second exception is the "tags" batch (`djhub fix-tags`, or the Library page): it fills missing artist and title tags from the file name and, only when asked, sets the genre tag to the genre folder name. A third is the "rename" batch (Library page, 00 Inbox only): the user edits artist or title, and the file is renamed to `Artist - Title.mp3` with matching tags. It changes only the 00 Inbox file, lists each change in the preview, and undo restores the old values. A fourth is the "retag" batch (`djhub retag PLAN.json`): it corrects the artist or title tag of songs already sorted (spelling, junk text), tags only, never file names, on every copy of the song; the preview lists each change and undo restores the old values. File moves only happen through batches (`app/services/library.py`): plan, show the user, apply after approval. The one exception is renaming a genre folder when the user asks: rename the directory itself, then rescan. Nothing is deleted; removals go to the Trash.
+### Music files
 
-Genre folders are organized by music genre first, never by language. Scenes that are a genre of their own, like Spanish 80's & Movida, are the exception. The user knows Rekordbox works by file path, so when they ask to reorganize or rename folders, do not warn about tracks showing as missing.
+Audio analysis is read-only. Never modify music files, tags, or the Rekordbox library, except in these four batches. Each one is previewed first, lists every change, and undo restores the old values:
+
+1. **Intake** (a kept download moves to 00 Inbox): writes the artist and title ID3 tags, and fills an empty album or year from another version of the song, so Rekordbox shows them correctly.
+2. **Tags** (`djhub fix-tags`, or the Library page): fills missing artist and title tags from the file name and, only when asked, sets the genre tag to the genre folder name.
+3. **Rename** (Library page, 00 Inbox only): the user edits artist or title, and the file is renamed to `Artist - Title.mp3` with matching tags.
+4. **Retag** (`djhub retag PLAN.json`): corrects the artist or title tag of songs already sorted (spelling, junk text). Tags only, never file names, and every copy of the song gets the same edit.
+
+Artist and title tags use Spotify's spelling (see the profiles below).
+
+### Moves, folders and deletion
+
+- File moves only happen through batches (`app/services/library.py`): plan, show the user, apply after approval.
+- Renaming a genre folder on request is the one exception: rename the directory itself, then rescan (`djhub scan-library`). The same goes when the user changes the library in Finder.
+- Nothing is deleted by Claude; removals go to the Trash. `djhub remove` refuses a song's only genre copy; if the user wants it gone, they delete it themselves in Finder and Claude rescans.
+- Genre folders are organized by music genre first, never by language. Scenes that are a genre of their own, like Spanish 80's & Movida, are the exception.
+- The user knows Rekordbox works by file path. When they ask to reorganize or rename folders, do not warn about tracks showing as missing.
 
 ## Working in this project
 
