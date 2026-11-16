@@ -181,6 +181,34 @@ def test_fix_tags_from_filename_and_genre_folder_then_undo(env):
     assert read_tags(genre).get("artist") is None and read_tags(genre).get("genre") is None
 
 
+def test_retag_fixes_every_copy_then_undo(env):
+    from app.core.tags import read_tags
+
+    from .conftest import real_audio
+
+    genre = real_audio(env.root / "Genres" / "Synth-Pop & New Wave" / "Yazzoo - Situation.mp3",
+                       title="Situation", artist="Yazzoo")
+    session_copy = env.root / "Sessions" / "Party" / genre.name
+    session_copy.parent.mkdir(parents=True, exist_ok=True)
+    session_copy.write_bytes(genre.read_bytes())
+    inbox = real_audio(env.root / "00 Inbox" / "A - B.mp3", title="B", artist="A", frequency=500)
+
+    item = {"source": "Genres/Synth-Pop & New Wave/Yazzoo - Situation.mp3", "artist": "Yazoo"}
+    p = plan("retag", {"items": [item, {"source": "00 Inbox/A - B.mp3", "artist": "C"},
+                                 {"source": "Genres/Synth-Pop & New Wave/Yazzoo - Situation.mp3", "title": ""}]})
+    assert len(p.problems) == 2 and len(p.runnable()) == 2
+
+    batch = preview("retag", {"items": [item]})
+    assert library.apply(session_scope, batch)["status"] == "applied"
+    for path in (genre, session_copy):
+        assert read_tags(path) == {"artist": "Yazoo", "title": "Situation"}
+    assert genre.name == "Yazzoo - Situation.mp3" and read_tags(inbox)["artist"] == "A"
+    assert plan("retag", {"items": [item]}).runnable() == []
+
+    library.apply(session_scope, preview("undo", {"batch_id": batch}))
+    assert read_tags(genre)["artist"] == "Yazzoo" and read_tags(session_copy)["artist"] == "Yazzoo"
+
+
 def test_rename_inbox_file_changes_name_and_tags_then_undo(env):
     from app.core.tags import read_tags
 
@@ -208,11 +236,11 @@ def test_move_from_inbox_applies_name_edits(env):
     from .conftest import real_audio
 
     real_audio(env.root / "00 Inbox" / "VVV - Invierno nuclear.mp3", title="Invierno nuclear", artist="VVV")
-    item = {"source": "00 Inbox/VVV - Invierno nuclear.mp3", "to": "Genres/Post-Punk & Dark Wave",
+    item = {"source": "00 Inbox/VVV - Invierno nuclear.mp3", "to": "Genres/Post-Punk",
             "action": "move", "artist": "VVV [Trippin'you]", "title": "Invierno nuclear"}
     batch = preview("apply", {"items": [item]})
     library.apply(session_scope, batch)
-    new = env.root / "Genres" / "Post-Punk & Dark Wave" / "VVV [Trippin'you] - Invierno nuclear.mp3"
+    new = env.root / "Genres" / "Post-Punk" / "VVV [Trippin'you] - Invierno nuclear.mp3"
     assert new.exists() and read_tags(new)["artist"] == "VVV [Trippin'you]"
     library.apply(session_scope, preview("undo", {"batch_id": batch}))
     old = env.root / "00 Inbox" / "VVV - Invierno nuclear.mp3"

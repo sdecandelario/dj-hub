@@ -607,6 +607,37 @@ def plan_tags(root, tracks, genre=False):
     return plan
 
 
+def plan_retag(root, tracks, items):
+    """Correct the artist or title tag of songs already sorted (only tags change, never the file name).
+
+    items: [{"source": rel path, "artist": str, "title": str}]; a missing key keeps that tag.
+    Every copy of the song gets the same edit, so copies stay byte-identical."""
+    known = {t["path"]: t for t in tracks}
+    songs = by_song(tracks)
+    plan = Plan("retag")
+    seen = set()
+    for item in items:
+        source = item.get("source", "")
+        track = known.get(source)
+        if track is None or track["kind"] not in ("genre", "session"):
+            plan.problems.append(f"{source}: not a song in Genres or Sessions")
+            continue
+        if track["fp"] in seen:
+            plan.problems.append(f"{source}: the same song is listed twice")
+            continue
+        seen.add(track["fp"])
+        wanted = {key: (item[key] or "").strip() or None for key in ("artist", "title") if key in item}
+        if wanted.get("title", "x") is None:
+            plan.problems.append(f"{source}: the title cannot be empty")
+            continue
+        copies = sorted(active(songs[track["fp"]]), key=lambda c: c["path"])
+        have = read_tags(copies[0]["abs"])
+        wanted = {k: v for k, v in wanted.items() if (have.get(k) or None) != v}
+        for copy in copies if wanted else []:
+            plan.steps.append(Step("tags", copy["abs"], copy["abs"], label="retag", tags=dict(wanted)))
+    return plan
+
+
 # --- Running a plan ----------------------------------------------------------------------
 
 

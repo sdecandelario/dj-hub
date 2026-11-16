@@ -109,6 +109,8 @@ def make_plan(session, kind, payload):
         return lib.plan_remove(cfg.root, cfg.trash, tracks, payload.get("paths") or [])
     if kind == "rename":
         return lib.plan_rename(cfg.root, tracks, payload.get("items") or [])
+    if kind == "retag":
+        return lib.plan_retag(cfg.root, tracks, payload.get("items") or [])
     if kind == "tags":
         return lib.plan_tags(cfg.root, tracks, genre=bool(payload.get("genre")))
     if kind == "intake":
@@ -132,7 +134,7 @@ def default_label(kind, plan):
     for step in plan.runnable():
         counts[step.label or step.action] = counts.get(step.label or step.action, 0) + 1
     detail = ", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "nothing to do"
-    return {"apply": "Library change", "remove": "Send to Trash", "intake": "Downloads to Inbox/Rejected", "tags": "Fix tags", "rename": "Rename files",
+    return {"apply": "Library change", "remove": "Send to Trash", "intake": "Downloads to Inbox/Rejected", "tags": "Fix tags", "retag": "Correct tags", "rename": "Rename files",
             "undo": "Undo"}.get(kind, kind) + f" ({detail})"
 
 

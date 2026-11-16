@@ -131,6 +131,10 @@ def cmd_fix_tags(args):
     run_change("tags", {"genre": args.genre}, args.apply)
 
 
+def cmd_retag(args):
+    run_change("retag", {"items": _load(args.plan)}, args.apply)
+
+
 def cmd_intake(args):
     run_change("intake", {"picks": _load(args.picks)}, args.apply)
 
@@ -284,6 +288,10 @@ def main(argv=None):
     p.add_argument("--genre", action="store_true", help="also set the genre tag to the genre folder name")
     p.add_argument("--apply", action="store_true")
     p.set_defaults(func=cmd_fix_tags)
+    p = sub.add_parser("retag", help="correct artist/title tags of sorted songs from a plan file (tags only)")
+    p.add_argument("plan")
+    p.add_argument("--apply", action="store_true")
+    p.set_defaults(func=cmd_retag)
     p = sub.add_parser("intake", help="move reviewed downloads (picks JSON) to 00 Inbox / 00 Rejected")
     p.add_argument("picks")
     p.add_argument("--apply", action="store_true")

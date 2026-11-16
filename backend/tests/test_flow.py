@@ -114,7 +114,7 @@ def test_api_smoke(client, env):
 
 def test_analysis_of_several_folders_is_one_run(env):
     ebm = real_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Liebe.mp3")
-    wave = real_audio(env.root / "Genres" / "Post-Punk & Dark Wave" / "Boy Harsher - Pain.mp3", frequency=300)
+    wave = real_audio(env.root / "Genres" / "Post-Punk" / "Boy Harsher - Pain.mp3", frequency=300)
     real_audio(env.root / "Genres" / "Other" / "Skip - Me.mp3")
     folders = [str(ebm.parent), str(wave.parent), str(ebm.parent)]
     job = runner.run_sync("analyze", {"paths": folders}, echo=None)

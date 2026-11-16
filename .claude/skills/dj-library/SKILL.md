@@ -32,7 +32,7 @@ Download folders (`SOURCES`): `~/.local/share/nicotine/downloads` and `~/Downloa
 - Changing genre: **move** from the old genre folder to the new one.
 - `00 Rejected` is not part of the library: `status`, `scan` and `dupes` ignore it.
 - The script refuses anything that would leave a song with no genre or with two genres, and never deletes: `remove` and `undo` send files to the Trash.
-- Never edit audio. Tags and names change only in the batches below (always previewed first, and undo restores the old values): `intake` writes artist and title tags (and fills an empty album or year), `fix-tags` fills missing artist and title tags from the file name (with `--genre`, also sets the genre tag to the genre folder name), and the app's rename batch (00 Inbox only) renames a file to `Artist - Title.mp3` with matching tags. Do not rename or retag any other way. Rekordbox finds tracks by file path, so after Rekordbox has imported a file, moving or renaming it makes it show as missing. Mention this when the user changes the genre of, or removes, a song they may have already imported. The session folders were moved into `Sessions/` on 2026-11-08, so session playlists imported before that need re-linking or re-importing in Rekordbox.
+- Never edit audio. Tags and names change only in the batches below (always previewed first, and undo restores the old values): `intake` writes artist and title tags (and fills an empty album or year), `fix-tags` fills missing artist and title tags from the file name (with `--genre`, also sets the genre tag to the genre folder name), the app's rename batch (00 Inbox only) renames a file to `Artist - Title.mp3` with matching tags, and `retag` corrects the artist or title tag of songs already sorted (tags only, never file names). Do not rename or retag any other way, except renaming a genre folder itself when the user asks (rename the directory, then rescan). Genre folders are by music genre, never by language (Spanish 80's & Movida is the exception). Rekordbox finds tracks by file path, so after Rekordbox has imported a file, moving or renaming it makes it show as missing. Mention this when the user changes the genre of, or removes, a single song they may have already imported; not when they ask to reorganize or rename folders, because they know. The session folders were moved into `Sessions/` on 2026-11-08, so session playlists imported before that need re-linking or re-importing in Rekordbox.
 - Nicotine shares the whole `DJ Tracks` folder, so `00 Inbox` and `00 Rejected` are shared too.
 
 ## Genres
@@ -50,6 +50,7 @@ Choose by artist and track, using your music knowledge, the `genre_tag` (often g
 | `find WORDS...` | Every copy of songs matching artist/title/filename words |
 | `apply PLAN.json [--apply]` | Run a plan of copies and moves |
 | `remove PATH... [--apply]` | Send copies to the Trash (files or folders, relative to the library) |
+| `retag PLAN.json [--apply]` | Correct artist/title tags of sorted songs, tags only: `[{"source": "Genres/X/a.mp3", "artist": "...", "title": "..."}]`, a missing key keeps that tag; every copy of the song is edited |
 | `intake PICKS.json [--apply]` | Move reviewed downloads: the kept version to `00 Inbox`, the others to `00 Rejected/<song>` (format below) |
 | `fix-tags [--genre] [--apply]` | Fill missing artist/title tags from file names; with `--genre`, also set the genre tag to the genre folder (rewrites most files) |
 | `intake-decided [--apply]` | Same, for the songs the user decided on the app's Downloads page |
@@ -65,7 +66,7 @@ Plan file format (write it to the session scratchpad, not the library):
 
 ```json
 [
-  {"source": "00 Inbox/Boy Harsher - Pain.mp3", "to": "Genres/Post-Punk & Dark Wave", "action": "move"},
+  {"source": "00 Inbox/Boy Harsher - Pain.mp3", "to": "Genres/Post-Punk", "action": "move"},
   {"source": "00 Inbox/Boy Harsher - Pain.mp3", "to": "Sessions/New Year Party 2026", "action": "copy"}
 ]
 ```

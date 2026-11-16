@@ -100,7 +100,7 @@ def reveal(file_id: int, session=Depends(get_session, scope="function")):
 
 
 class PreviewBody(BaseModel):
-    kind: Literal["apply", "remove", "intake", "rename", "tags", "undo"]
+    kind: Literal["apply", "remove", "intake", "rename", "tags", "retag", "undo"]
     payload: dict
     label: str = ""
 
