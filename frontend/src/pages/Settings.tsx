@@ -23,6 +23,10 @@ export default function SettingsPage() {
     mutationFn: () => api.put('/settings', { sources: (sources ?? '').split('\n').map(s => s.trim()).filter(Boolean) }),
     onSuccess: () => { setSources(null); refresh() },
   })
+  const saveSoulseek = useMutation({
+    mutationFn: (body: { soulseek_min_bitrate?: number; soulseek_candidates?: number }) => api.put('/settings', body),
+    onSuccess: refresh,
+  })
   const add = useMutation({
     mutationFn: () => api.post('/playlists', { value: newPlaylist, project: newProject }),
     onSuccess: () => { setNewPlaylist(''); refresh() },
@@ -34,7 +38,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="page-head"><div><h1>Settings</h1></div></div>
-      <ErrorNote error={settings.error || saveSources.error || add.error} />
+      <ErrorNote error={settings.error || saveSources.error || saveSoulseek.error || add.error} />
       {params.get('spotify') === 'connected' && <div className="callout ok">Spotify is connected. Refresh the playlists to read them in full.</div>}
       <div className="grid-2">
         <div className="panel">
@@ -68,7 +72,7 @@ export default function SettingsPage() {
           <h2>Spotify</h2>
           {spotify.data && !spotify.data.keys && (
             <div className="callout warn">
-              SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set in the shell that started the app. Without them
+              SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set in .env. Without them
               playlists cannot be read.
             </div>
           )}
@@ -82,6 +86,25 @@ export default function SettingsPage() {
             </>
           )}
         </div>
+      </div>
+      <div className="panel">
+        <h2>Soulseek</h2>
+        <p className="muted">
+          Only MP3 files are searched. Each song downloads into the first download folder (inside Soulseek);
+          pick the best version on the Downloads page. The login is SOULSEEK_USERNAME and SOULSEEK_PASSWORD in .env.
+        </p>
+        {s && (
+          <div className="row">
+            <label>Minimum bitrate (kbps){' '}
+              <input type="number" min={128} max={320} step={64} defaultValue={s.soulseek.min_bitrate} key={`b${s.soulseek.min_bitrate}`}
+                onBlur={e => Number(e.target.value) !== s.soulseek.min_bitrate && saveSoulseek.mutate({ soulseek_min_bitrate: Number(e.target.value) })} />
+            </label>
+            <label>Versions per song{' '}
+              <input type="number" min={1} max={50} defaultValue={s.soulseek.candidates} key={`c${s.soulseek.candidates}`}
+                onBlur={e => Number(e.target.value) !== s.soulseek.candidates && saveSoulseek.mutate({ soulseek_candidates: Number(e.target.value) })} />
+            </label>
+          </div>
+        )}
       </div>
       <div className="panel">
         <h2>Playlists</h2>

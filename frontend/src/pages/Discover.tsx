@@ -22,6 +22,7 @@ export default function Discover() {
     onSuccess: () => client.invalidateQueries({ queryKey: ['candidates'] }),
   })
   const run = useMutation({ mutationFn: (g: string) => startJob('discover', { genre: g }) })
+  const download = useMutation({ mutationFn: (c: Candidate) => startJob('soulseek_download', { query: `${c.artist} ${c.title}` }) })
 
   const selected = genre || genres.data?.[0] || ''
 
@@ -60,7 +61,7 @@ export default function Discover() {
         <div className="cards" style={{ marginBottom: 0, gridTemplateColumns: 'repeat(3, 250px)' }}>
           {(['new', 'wanted', 'dismissed'] as Status[]).map(s => (
             <Card key={s} label={LABEL[s]} value={counts[s]} selected={status === s} onClick={() => setStatus(s)}
-              hint={{ new: 'Waiting for your decision', wanted: 'Download these in Nicotine',
+              hint={{ new: 'Waiting for your decision', wanted: 'Download these from Soulseek',
                 dismissed: 'Never suggested again' }[s]} />
           ))}
         </div>
@@ -110,6 +111,11 @@ export default function Discover() {
                 </td>
                 <td className="actions">
                   <div className="row">
+                    <button className="small" disabled={isRunning(jobs, 'soulseek_download') || download.isPending}
+                      title="Search Soulseek (MP3 320) and download the best versions into the download folder"
+                      onClick={() => download.mutate(c)}>
+                      Download
+                    </button>
                     <button className={`small ok${c.status === 'wanted' ? ' on' : ''}`}
                       title={c.status === 'wanted' ? 'Click again to undo' : 'Add to the wanted list'}
                       onClick={() => mark.mutate({ ids: [c.id], to: c.status === 'wanted' ? 'new' : 'wanted' })}>

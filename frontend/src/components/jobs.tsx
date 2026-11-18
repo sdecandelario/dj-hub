@@ -14,6 +14,7 @@ const REFRESH: Record<string, string[]> = {
   library_scan: ['files', 'tree', 'summary', 'playlists', 'tracks', 'file'],
   match_playlists: ['playlists', 'tracks', 'summary', 'downloads', 'file'],
   discover: ['candidates'],
+  soulseek_download: ['downloads'],
 }
 
 /** Subscribes to /api/events and keeps the list of active jobs; refreshes data when jobs finish. */

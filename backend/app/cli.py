@@ -265,6 +265,12 @@ def cmd_mark(args):
     print("\n".join(f"{args.status}: {line}" for line in out))
 
 
+def cmd_soulseek(args):
+    """Search Soulseek for a song and download its best versions into the download folder."""
+    from .services import soulseek  # noqa: F401 (registers the job)
+    runner.run_sync("soulseek_download", {"query": " ".join(args.query)}, echo=print)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="djhub", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -320,6 +326,9 @@ def main(argv=None):
     p.add_argument("--tracks", type=int, default=2, help="top tracks taken per artist")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_discover)
+    p = sub.add_parser("soulseek", help="download versions of a song from Soulseek into the download folder")
+    p.add_argument("query", nargs="+", help="artist and title")
+    p.set_defaults(func=cmd_soulseek)
     p = sub.add_parser("candidates", help="stored new-song candidates")
     p.add_argument("--status", choices=("new", "wanted", "dismissed"))
     p.add_argument("--genre")

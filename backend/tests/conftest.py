@@ -17,7 +17,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("DJ_TRASH", str(trash))
     monkeypatch.setenv("DJ_SOURCES", str(downloads))
     monkeypatch.setenv("DJ_HUB_DB", str(tmp_path / "test.db"))
-    monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
+    for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "LASTFM_API_KEY", "SOULSEEK_USERNAME", "SOULSEEK_PASSWORD"):   # never the real .env keys
+        monkeypatch.delenv(key, raising=False)
     config.reload_config()
     db.reset_engine()
     db.migrate()

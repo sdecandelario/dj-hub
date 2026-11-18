@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from ..config import get_config
@@ -17,6 +17,8 @@ router = APIRouter()
 
 class SettingsBody(BaseModel):
     sources: list[str] | None = None
+    soulseek_min_bitrate: int | None = Field(None, ge=128, le=320)
+    soulseek_candidates: int | None = Field(None, ge=1, le=50)
 
 
 @router.get("/settings")
@@ -24,7 +26,7 @@ def get_settings(session=Depends(get_session, scope="function")):
     cfg = get_config()
     return {"root": str(cfg.root), "trash": str(cfg.trash), "db": str(cfg.db_path),
             "sources": [str(p) for p in settings.sources(session)], "sources_locked": settings.sources_locked(),
-            "settle_seconds": cfg.settle_seconds, "workers": cfg.workers, "missing_tools": audio.missing_tools()}
+            "soulseek": settings.soulseek(session), "settle_seconds": cfg.settle_seconds, "workers": cfg.workers, "missing_tools": audio.missing_tools()}
 
 
 @router.put("/settings")
@@ -41,6 +43,10 @@ def put_settings(body: SettingsBody, session=Depends(get_session, scope="functio
         if bad:
             raise HTTPException(400, f"Not an existing folder (and not a top-level one): {', '.join(bad)}")
         settings.put(session, "sources", [str(p) for p in paths])
+    for key in ("min_bitrate", "candidates"):
+        value = getattr(body, f"soulseek_{key}")
+        if value is not None:
+            settings.put(session, f"soulseek_{key}", value)
     return get_settings(session)
 
 

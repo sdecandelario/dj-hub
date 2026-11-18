@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from .api import analysis, discovery, downloads, jobs, library, playlists, settings
 from .jobs import runner
-from .services import analysis as _a, discovery as _disc, downloads as _d, library as _l, playlists as _p  # noqa: F401 (job handlers)
+from .services import analysis as _a, discovery as _disc, downloads as _d, library as _l, playlists as _p, soulseek as _s  # noqa: F401 (job handlers)
 
 DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 

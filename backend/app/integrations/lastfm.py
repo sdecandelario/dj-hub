@@ -1,6 +1,6 @@
 """Last.fm client: similar artists and top tracks (the candidate source for discovery).
 
-The API key comes from the LASTFM_API_KEY environment variable and is never printed.
+The API key comes from LASTFM_API_KEY (the project's .env file) and is never printed.
 `fetch` is injectable so tests never touch the network.
 """
 import json
@@ -20,7 +20,7 @@ class LastfmError(RuntimeError):
 def api_key():
     key = os.environ.get("LASTFM_API_KEY", "").strip()
     if not key:
-        raise LastfmError("LASTFM_API_KEY is not set. Create a free key at https://www.last.fm/api/account/create")
+        raise LastfmError("LASTFM_API_KEY is not set in .env. Create a free key at https://www.last.fm/api/account/create")
     return key
 
 

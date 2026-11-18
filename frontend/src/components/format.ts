@@ -29,6 +29,7 @@ export const JOB_LABELS: Record<string, string> = {
   library_scan: 'Library scan',
   match_playlists: 'Playlist matching',
   discover: 'Finding new songs',
+  soulseek_download: 'Soulseek download',
 }
 
 /** Download a CSV built from rows (first row = header). */

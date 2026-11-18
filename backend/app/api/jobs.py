@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 # What the app can start through POST /jobs, and the params each type accepts.
-STARTABLE = {"analyze", "review_downloads", "spotify_refresh", "library_scan", "match_playlists", "discover"}
+STARTABLE = {"analyze", "review_downloads", "spotify_refresh", "library_scan", "match_playlists", "discover", "soulseek_download"}
 
 
 class JobBody(BaseModel):
@@ -33,6 +33,9 @@ def clean_params(type_, params):
     if type_ == "discover":
         genre = params.get("genre")
         return {"genre": genre} if isinstance(genre, str) and genre else {}
+    if type_ == "soulseek_download":
+        query = params.get("query")
+        return {"query": query.strip()} if isinstance(query, str) and query.strip() else {}
     if type_ == "spotify_refresh":
         ids = params.get("ids")
         return {"ids": [i for i in ids if isinstance(i, str)]} if isinstance(ids, list) and ids else {}

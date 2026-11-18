@@ -26,12 +26,12 @@ make start              # http://127.0.0.1:8000
 Playlists are read through the Spotify Web API, which needs a login:
 
 1. In your app at https://developer.spotify.com/dashboard add the redirect URI `http://127.0.0.1:8000/api/spotify/callback`.
-2. Export `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the shell that starts the app (for example in `~/.zshrc`).
+2. Copy `.env.dist` to `.env` (git-ignored) and fill in `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`.
 3. Settings → **Connect Spotify**. The login is saved in `data/spotify_token.json` (git-ignored, readable only by you).
 
 ## Last.fm
 
-Discover needs a free Last.fm API key (https://www.last.fm/api/account/create; the callback URL can stay empty). Export it as `LASTFM_API_KEY` in the shell that starts the app (for example in `~/.zshrc`). The key is never printed.
+Discover needs a free Last.fm API key (https://www.last.fm/api/account/create; the callback URL can stay empty). Put it in `.env` as `LASTFM_API_KEY`. The key is never printed.
 
 ## Safety
 
@@ -53,9 +53,13 @@ uv run --project ~/Projects/dj-hub/backend djhub apply plan.json --apply
 uv run --project ~/Projects/dj-hub/backend djhub undo --apply
 ```
 
-Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`, `dupes`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, and for new music `discover`, `candidates`, `mark`.
+- **Soulseek**: the Download button on a Discover card (or `djhub soulseek Artist Title`) searches Soulseek for MP3 files of 320 kbps or better and downloads up to 10 versions into the `Soulseek` folder inside the first download folder, so the Downloads page can pick the best one. It connects only while it runs, and shares `Genres` (read-only) meanwhile. Minimum bitrate and versions per song are in Settings.
+
+Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`, `dupes`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, and for new music `discover`, `candidates`, `mark`, `soulseek`.
 
 ## Configuration
+
+Secrets live in `.env` (copy `.env.dist`); the app and `djhub` read it at start, and a variable set in the shell wins. The other variables are optional:
 
 | Variable | Default |
 | --- | --- |
@@ -74,7 +78,7 @@ make migration m="..."  # after changing backend/app/models.py
 ```
 
 - `backend/app/core`: tags, names, audio, library rules, download ranking and matching (no database or web code).
-- `backend/app/integrations`: the Spotify and Last.fm clients (network, login file, env vars).
+- `backend/app/integrations`: the Spotify, Last.fm and Soulseek clients (network, login file, env vars).
 - `backend/app/services`: use cases (library batches, analysis, downloads review, playlists).
 - `backend/app/api`: HTTP routes under `/api`. `backend/app/jobs.py`: background jobs with progress.
 - `frontend/src/pages`: one file per page.

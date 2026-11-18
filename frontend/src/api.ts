@@ -45,7 +45,7 @@ export const audioUrl = (fileId: number) => `/api/files/${fileId}/audio`
 
 export type Job = {
   id: number
-  type: 'analyze' | 'review_downloads' | 'spotify_refresh' | 'library_scan' | 'match_playlists' | 'discover'
+  type: 'analyze' | 'review_downloads' | 'spotify_refresh' | 'library_scan' | 'match_playlists' | 'discover' | 'soulseek_download'
   params: Record<string, unknown>
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'
   done: number
@@ -289,6 +289,7 @@ export type Settings = {
   db: string
   sources: string[]
   sources_locked: boolean
+  soulseek: { min_bitrate: number; candidates: number }
   settle_seconds: number
   workers: number
   missing_tools: string[]
