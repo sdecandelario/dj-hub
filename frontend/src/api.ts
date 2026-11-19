@@ -64,7 +64,7 @@ export type Step = { action: 'copy' | 'move' | 'skip'; source: string; dest: str
 
 export type Batch = {
   id: number
-  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'tags' | 'rename'
+  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'tags' | 'retag' | 'rename'
   status: 'preview' | 'running' | 'applied' | 'partial' | 'undone' | 'discarded' | 'failed'
   label: string
   created_at: string

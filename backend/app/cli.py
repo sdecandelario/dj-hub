@@ -18,25 +18,23 @@ from .core import library as lib
 from .db import session_scope
 from .jobs import runner
 from .models import Batch
-from .services import analysis as _a, downloads as _d, library, playlists as _p  # noqa: F401
-from .services import downloads
+from .integrations import lastfm
+from .services import analysis, discovery, downloads, library, playlists, soulseek  # noqa: F401 (some register jobs)
 
 
-def _rel(path):
-    return library.rel(path)
+def _verb(step):
+    return step.label if step.label in ("inbox", "reject", "trash") else step.action
 
 
 def print_plan(plan):
-    for step in plan.steps:
-        if step.action == "skip":
-            print(f"skip   {_rel(step.source)}\n       -> {step.note}")
-        else:
-            verb = step.label if step.label in ("inbox", "reject", "trash") else step.action
-            print(f"{verb:6} {_rel(step.source)}\n       -> {_rel(step.dest)}")
     counts = {}
     for step in plan.steps:
-        key = step.label if step.label in ("inbox", "reject", "trash") else step.action
-        counts[key] = counts.get(key, 0) + 1
+        verb = _verb(step)
+        counts[verb] = counts.get(verb, 0) + 1
+        if step.action == "skip":
+            print(f"skip   {library.rel(step.source)}\n       -> {step.note}")
+        else:
+            print(f"{verb:6} {library.rel(step.source)}\n       -> {library.rel(step.dest)}")
     print("\n" + ", ".join(f"{n} {k}" for k, n in sorted(counts.items())) + (", " if counts else "")
           + f"{len(plan.problems)} problem(s)")
     for note in plan.notes:
@@ -217,8 +215,6 @@ def _print_candidate(c):
 
 def cmd_discover(args):
     """Find new-song candidates for a genre folder with Last.fm and store them (no files change)."""
-    from .integrations import lastfm
-    from .services import discovery
     try:
         with session_scope() as s:
             result = discovery.discover(s, args.genre, artist_limit=args.artists, tracks_per_artist=args.tracks)
@@ -242,7 +238,6 @@ def cmd_discover(args):
 
 
 def cmd_candidates(args):
-    from .services import discovery
     with session_scope() as s:
         rows = discovery.list_candidates(s, status=args.status, genre=args.genre)
     if args.json:
@@ -255,7 +250,6 @@ def cmd_candidates(args):
 
 
 def cmd_mark(args):
-    from .services import discovery
     try:
         with session_scope() as s:
             rows = discovery.set_status(s, args.ids, args.status)
@@ -267,7 +261,6 @@ def cmd_mark(args):
 
 def cmd_soulseek(args):
     """Search Soulseek for a song and download its best versions into the download folder."""
-    from .services import soulseek  # noqa: F401 (registers the job)
     runner.run_sync("soulseek_download", {"query": " ".join(args.query)}, echo=print)
 
 

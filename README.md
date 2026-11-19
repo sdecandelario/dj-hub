@@ -35,7 +35,7 @@ Discover needs a free Last.fm API key (https://www.last.fm/api/account/create; t
 
 ## Safety
 
-- Audio data and Rekordbox are never modified, and measuring only reads. Tags and names change only in previewed batches (all undoable): moving a kept download to `00 Inbox` writes its artist and title tags, "Fix tags" fills missing artist/title tags (and, if you ask, the genre tag), and renaming a file in `00 Inbox` renames it to `Artist - Title.mp3` with matching tags.
+- Audio data and Rekordbox are never modified, and measuring only reads. Tags and names change only in previewed batches (all undoable): moving a kept download to `00 Inbox` writes its artist and title tags, "Fix tags" fills missing artist/title tags (and, if you ask, the genre tag), renaming a file in `00 Inbox` renames it to `Artist - Title.mp3` with matching tags, and `retag` corrects the artist or title tag of songs already sorted (tags only, never file names).
 - Every file change is planned first and shown for confirmation. Nothing is deleted: removals go to the Trash. Each applied change is a batch you can undo from History.
 - A song keeps exactly one genre folder; sessions hold copies.
 - If files change between the preview and Apply, nothing is done and you are asked to preview again.
@@ -55,7 +55,7 @@ uv run --project ~/Projects/dj-hub/backend djhub undo --apply
 
 - **Soulseek**: the Download button on a Discover card (or `djhub soulseek Artist Title`) searches Soulseek for MP3 files of 320 kbps or better and downloads up to 10 versions into the `Soulseek` folder inside the first download folder, so the Downloads page can pick the best one. It connects only while it runs, and shares `Genres` (read-only) meanwhile. Minimum bitrate and versions per song are in Settings.
 
-Other commands: `scan`, `find`, `remove`, `fix-tags`, `intake`, `intake-decided`, `dupes`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, and for new music `discover`, `candidates`, `mark`, `soulseek`.
+Other commands: `scan`, `find`, `remove`, `fix-tags`, `retag`, `intake`, `intake-decided`, `dupes`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, and for new music `discover`, `candidates`, `mark`, `soulseek`.
 
 ## Configuration
 

@@ -129,13 +129,16 @@ def preview(session, kind, payload, label=""):
     return batch
 
 
+KIND_TITLES = {"apply": "Library change", "remove": "Send to Trash", "intake": "Downloads to Inbox/Rejected",
+               "tags": "Fix tags", "retag": "Correct tags", "rename": "Rename files", "undo": "Undo"}
+
+
 def default_label(kind, plan):
     counts = {}
     for step in plan.runnable():
         counts[step.label or step.action] = counts.get(step.label or step.action, 0) + 1
     detail = ", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "nothing to do"
-    return {"apply": "Library change", "remove": "Send to Trash", "intake": "Downloads to Inbox/Rejected", "tags": "Fix tags", "retag": "Correct tags", "rename": "Rename files",
-            "undo": "Undo"}.get(kind, kind) + f" ({detail})"
+    return KIND_TITLES.get(kind, kind) + f" ({detail})"
 
 
 def apply(session_factory, batch_id):
@@ -186,11 +189,10 @@ def apply(session_factory, batch_id):
             if state["op"] is not None:   # the step that failed: keep its row only if it really happened
                 with session_factory() as s:
                     forget_unexecuted_ops(s, batch_id, only=state["op"])
-        seq = [state["done"]]
         with session_factory() as session:
             batch = session.get(Batch, batch_id)
             if error:
-                batch.status = "partial" if seq[0] else "failed"
+                batch.status = "partial" if state["done"] else "failed"
                 batch.error = error
             elif batch.kind == "undo" and plan.problems:
                 batch.status = "partial"
@@ -211,9 +213,9 @@ def apply(session_factory, batch_id):
                         decision.applied_batch_id = batch.id
             follow_moves(session, batch_id)
             sync_library(session)
-            result = {"id": batch.id, "status": batch.status, "error": batch.error, "done": seq[0],
+            result = {"id": batch.id, "status": batch.status, "error": batch.error, "done": state["done"],
                       "kind": batch.kind, "warnings": warnings}
-        if error and not seq[0]:
+        if error and not state["done"]:
             raise BatchError(error)
         return result
 

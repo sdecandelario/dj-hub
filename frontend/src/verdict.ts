@@ -96,7 +96,7 @@ export function judge(row: Measurement, ctx: Context): Verdict {
   const top = f[0]
   const level: Level = top && (top.level === 'fix' || top.level === 'check') ? top.level : 'ok'
   if (!top || top.level === 'info') {
-    return { level, headline: top ? 'Fine' : 'Fine', action: trim !== null && Math.abs(trim) >= 0.5
+    return { level, headline: 'Fine', action: trim !== null && Math.abs(trim) >= 0.5
       ? `Trim ${db(trim)} dB to match the library.` : 'Nothing to do.', findings: f, trim }
   }
   return { level, headline: top.text, action: top.action, findings: f, trim }

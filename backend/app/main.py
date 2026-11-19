@@ -5,7 +5,6 @@ Listens on 127.0.0.1 only: the API moves files.
 """
 from contextlib import asynccontextmanager
 from pathlib import Path
-
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request
@@ -30,7 +29,8 @@ async def lifespan(app):
     yield
 
 
-LOCAL_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
+LOCAL_HOSTNAMES = ("127.0.0.1", "localhost", "::1")
+LOCAL_HOSTS = [h if ":" not in h else f"[{h}]" for h in LOCAL_HOSTNAMES]
 
 app = FastAPI(title="DJ Hub", lifespan=lifespan)
 # The API moves files, so only this computer may talk to it: a web page open in the browser must not be
@@ -41,11 +41,8 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=LOCAL_HOSTS)
 @app.middleware("http")
 async def same_machine_only(request: Request, call_next):
     origin = request.headers.get("origin")
-    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin != "null":
-        host = urlparse(origin).hostname or ""
-        if host not in ("127.0.0.1", "localhost", "::1"):
-            return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
-    elif request.method not in ("GET", "HEAD", "OPTIONS") and origin == "null":
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin is not None \
+            and (urlparse(origin).hostname or "") not in LOCAL_HOSTNAMES:
         return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
     return await call_next(request)
 

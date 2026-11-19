@@ -56,6 +56,9 @@ class JobContext:
         if self.echo:
             self.echo(line)
 
+    def request_cancel(self):
+        self._cancel.set()
+
     def cancelled(self):
         return self._cancel.is_set()
 
@@ -113,7 +116,7 @@ class JobRunner:
         with self._lock:
             ctx = self._contexts.get(job_id)
         if ctx:
-            ctx._cancel.set()
+            ctx.request_cancel()
             return True
         with session_scope() as s:
             job = s.get(Job, job_id)
