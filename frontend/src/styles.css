@@ -115,7 +115,10 @@ button.on { background: var(--accent-soft); border-color: var(--accent); color: 
 input, select, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 10px; max-width: 100%; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
-input.search { min-width: 240px; }
+input.search { min-width: 240px; padding-right: 30px; }
+.search-wrap { position: relative; display: inline-flex; align-items: center; }
+.search-wrap .clear { position: absolute; right: 4px; padding: 0 8px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); }
+.search-wrap .clear:hover { color: var(--text); }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; }
@@ -244,3 +247,7 @@ pre.log { background: var(--panel-2); padding: 10px; border-radius: 8px; font-si
 .toasts .callout { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
 :focus-visible { outline: 2px solid var(--accent, #4c8dff); outline-offset: 2px; }
 .offline-note { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 60; margin: 0; }
+
+.picker { min-width: 180px; }
+.picker summary { cursor: pointer; }
+.picker-menu { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }

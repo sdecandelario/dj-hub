@@ -3,7 +3,8 @@ import { Fragment, useMemo, useState } from 'react'
 import { api, type Candidate } from '../api'
 import { isRunning, startJob, useActiveJobs, useSoulseekJobs } from '../components/jobsContext'
 import { ListToolbar } from '../components/ListToolbar'
-import { DownloadPanel } from '../components/SoulseekDownloads'
+import { useSelection } from '../components/useSelection'
+import { DownloadPanel, DownloadSelectedButton } from '../components/SoulseekDownloads'
 import { Badge, Card, Empty, ErrorNote } from '../components/ui'
 
 type Status = Candidate['status']
@@ -13,6 +14,8 @@ const NONE = '*none'
 
 const LABEL: Record<Status, string> = { new: 'New', wanted: 'Wanted', dismissed: 'Dismissed', in_library: 'In library' }
 
+const queryOf = (c: Candidate) => `${c.artist} ${c.title}`
+
 export default function Discover() {
   const [status, setStatus] = useState<Status>('new')
   const [genre, setGenre] = useState('')
@@ -20,6 +23,7 @@ export default function Discover() {
   const [playlist, setPlaylist] = useState('')   // '' all, ANY / NONE, or a playlist name
   const jobs = useActiveJobs()
   const downloads = useSoulseekJobs()
+  const picked = useSelection()
   const client = useQueryClient()
   const genres = useQuery({ queryKey: ['candidates', 'genres'], queryFn: () => api.get<string[]>('/candidates/genres') })
   const list = useQuery({ queryKey: ['candidates', 'list'], queryFn: () => api.get<Candidate[]>('/candidates') })
@@ -28,7 +32,7 @@ export default function Discover() {
     onSuccess: () => client.invalidateQueries({ queryKey: ['candidates'] }),
   })
   const run = useMutation({ mutationFn: (g: string) => startJob('discover', { genre: g }) })
-  const download = useMutation({ mutationFn: (c: Candidate) => startJob('soulseek_download', { query: `${c.artist} ${c.title}` }) })
+  const download = useMutation({ mutationFn: (c: Candidate) => startJob('soulseek_download', { queries: [queryOf(c)] }) })
 
   const selected = genre || genres.data?.[0] || ''
 
@@ -49,6 +53,9 @@ export default function Discover() {
   }[filter] ?? c.in_playlists.some(p => p.playlist === filter)))
   const running = isRunning(jobs, 'discover')
 
+
+  const downloadable = rows.filter(c => c.status !== 'in_library')
+  const ticked = downloadable.filter(c => picked.selected.has(String(c.id)))
 
   return (
     <>
@@ -94,20 +101,32 @@ export default function Discover() {
           <option value={NONE}>Not in any playlist</option>
           {playlistNames.map(n => <option key={n} value={n}>In {n}</option>)}
         </select>
+        <DownloadSelectedButton queries={ticked.map(queryOf)} onStarted={picked.clear} />
       </ListToolbar>
       <div className="panel flush table-wrap">
         <table className="fixed">
           <colgroup>
-            <col style={{ width: '14%' }} /><col style={{ width: '20%' }} /><col style={{ width: '24%' }} />
+            <col style={{ width: 36 }} /><col style={{ width: '14%' }} /><col style={{ width: '20%' }} /><col style={{ width: '24%' }} />
             <col /><col style={{ width: 250 }} />
           </colgroup>
           <thead>
-            <tr><th>Artist</th><th>Title</th><th>Because you have</th><th>Notes</th><th className="actions">Decision</th></tr>
+            <tr>
+              <th><input type="checkbox" aria-label="Select all" disabled={!downloadable.length}
+                checked={!!downloadable.length && ticked.length === downloadable.length}
+                onChange={e => picked.setAll(downloadable.map(c => String(c.id)), e.target.checked)} /></th>
+              <th>Artist</th><th>Title</th><th>Because you have</th><th>Notes</th><th className="actions">Decision</th>
+            </tr>
           </thead>
           <tbody>
             {rows.map(c => (
               <Fragment key={c.id}>
               <tr>
+                <td>
+                  {c.status !== 'in_library' && (
+                    <input type="checkbox" aria-label="Select" checked={picked.selected.has(String(c.id))}
+                      onChange={() => picked.toggle(String(c.id))} />
+                  )}
+                </td>
                 <td>{c.artist}</td>
                 <td>
                   <a href={`https://open.spotify.com/search/${encodeURIComponent(`${c.artist} ${c.title}`)}`}
@@ -149,8 +168,8 @@ export default function Discover() {
                   </div>
                 </td>
               </tr>
-              {downloads.get(`${c.artist} ${c.title}`) && (
-                <tr><td colSpan={5}><DownloadPanel job={downloads.get(`${c.artist} ${c.title}`)!} /></td></tr>
+              {downloads.get(queryOf(c)) && (
+                <tr><td colSpan={6}><DownloadPanel job={downloads.get(queryOf(c))!} query={queryOf(c)} /></td></tr>
               )}
               </Fragment>
             ))}

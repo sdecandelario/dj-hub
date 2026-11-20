@@ -13,7 +13,8 @@ export const startJob = (type: Job['type'], params: Record<string, unknown> = {}
 export const isRunning = (jobs: Job[], type: Job['type']) =>
   jobs.some(j => j.type === type && (j.status === 'running' || j.status === 'queued'))
 
-/** The latest Soulseek download job per search query ("Artist Title"): live while running, as left when finished. */
+/** The latest Soulseek download job per search query ("Artist Title"): live while running, as left when finished.
+ *  One job can cover several queries, so it appears under each of them. */
 export function useSoulseekJobs() {
   const live = useActiveJobs().filter(j => j.type === 'soulseek_download')
   const recent = useQuery({
@@ -22,8 +23,9 @@ export function useSoulseekJobs() {
   })
   const byQuery = new Map<string, Job>()
   for (const job of [...(recent.data ?? []), ...live]) {   // oldest first, so the newest wins
-    const query = String(job.params.query ?? '')
-    if (!byQuery.has(query) || byQuery.get(query)!.id < job.id) byQuery.set(query, job)
+    for (const query of (job.params.queries ?? []) as string[]) {
+      if (!byQuery.has(query) || byQuery.get(query)!.id < job.id) byQuery.set(query, job)
+    }
   }
   return byQuery
 }

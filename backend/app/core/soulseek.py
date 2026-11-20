@@ -36,9 +36,10 @@ def is_wanted(result, query, min_bitrate):
 
 
 def choose(results, query, min_bitrate, count):
-    """Up to `count` results, one per peer: free slots first, then shortest queue, then fastest."""
-    ranked = sorted((r for r in results if is_wanted(r, query, min_bitrate)),
-                    key=lambda r: (not r.free_slots, r.queue_size, -r.speed))
+    """Up to `count` results, one per peer, only from peers that can send right now (a free slot, so nothing
+    sits in a queue): shortest queue first, then fastest."""
+    ranked = sorted((r for r in results if r.free_slots and is_wanted(r, query, min_bitrate)),
+                    key=lambda r: (r.queue_size, -r.speed))
     seen, picked = set(), []
     for r in ranked:
         if r.username not in seen:

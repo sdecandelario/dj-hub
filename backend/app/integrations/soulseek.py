@@ -1,4 +1,4 @@
-"""Soulseek client (aioslsk): search for a song and download the chosen results.
+"""Soulseek client (aioslsk): search for songs and download the chosen results.
 
 It connects only while a call runs, so it is slower to get queue slots than an always-on client.
 The login comes from SOULSEEK_USERNAME and SOULSEEK_PASSWORD (the project's .env file) and is never
@@ -20,6 +20,10 @@ from ..core.soulseek import Result
 
 # Peers that cannot be reached are normal on Soulseek and fill the terminal with warnings.
 logging.getLogger("aioslsk").setLevel(logging.CRITICAL)
+
+
+# Seconds a download may sit in a peer's queue before it is dropped (the song's other versions go on).
+QUEUE_GRACE = 30
 
 
 class SoulseekError(RuntimeError):
@@ -53,7 +57,7 @@ def _snapshot(result, transfer):
             "state": transfer.state.VALUE.name.lower()}
 
 
-async def _fetch(query, pick, dest, share, search_wait, timeout, echo, progress):
+async def _fetch(queries, pick, dest, share, search_wait, timeout, echo, progress, cancelled, skipped):
     settings = Settings(credentials=credentials())
     settings.shares.download = str(dest)
     settings.shares.directories = [SharedDirectorySettingEntry(path=str(p)) for p in share]
@@ -62,28 +66,50 @@ async def _fetch(query, pick, dest, share, search_wait, timeout, echo, progress)
             await client.login()
         except AioSlskException as error:
             raise SoulseekError(f"Soulseek login failed: {error}") from None
-        echo(f"Searching Soulseek for '{query}' ({search_wait}s)")
-        request = await client.searches.search(query)
-        await asyncio.sleep(search_wait)
-        results = _results(request)
-        chosen = pick(results)
-        echo(f"{len(results)} files found, {len(chosen)} chosen")
-        transfers = [(r, await client.transfers.download(r.username, r.path)) for r in chosen]
+        echo(f"Searching Soulseek for {len(queries)} song(s) ({search_wait}s)")
+        requests = {q: await client.searches.search(q) for q in queries}
+        for _ in range(search_wait):
+            if cancelled():
+                return {q: {"found": 0, "files": []} for q in queries}
+            await asyncio.sleep(1)
+        found, transfers = {}, {}
+        for query, request in requests.items():
+            results = _results(request)
+            chosen = [] if query in skipped() else pick(query, results)
+            echo(f"{query}: {len(results)} files found, {len(chosen)} chosen")
+            found[query] = len(results)
+            transfers[query] = [(r, await client.transfers.download(r.username, r.path)) for r in chosen]
+        everything = [t for pairs in transfers.values() for _, t in pairs]
+        snapshot = lambda: {q: {"found": found[q], "files": [_snapshot(r, t) for r, t in pairs]}
+                            for q, pairs in transfers.items()}
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while loop.time() < deadline and not all(t.is_finalized() for _, t in transfers):
-            progress([_snapshot(r, t) for r, t in transfers])
+        started = loop.time()
+        while loop.time() < deadline and not cancelled() and not all(t.is_finalized() for t in everything):
+            for query in skipped():   # dropped by the user: stop that song's unfinished transfers
+                for _, transfer in transfers.get(query, []):
+                    if not transfer.is_finalized():
+                        await client.transfers.abort(transfer)
+            if loop.time() - started > QUEUE_GRACE:   # a peer that still queues us is not worth waiting for
+                for transfer in everything:
+                    if transfer.state.VALUE == TransferState.QUEUED:
+                        await client.transfers.abort(transfer)
+            progress(snapshot())
             await asyncio.sleep(2)
-        for _, transfer in transfers:
+        for transfer in everything:
             if not transfer.is_finalized():
                 await client.transfers.abort(transfer)   # also removes the partial file
-        out = [_snapshot(r, t) for r, t in transfers]
-        return {"found": len(results), "files": out}
+        # What did not arrive (queued and dropped, failed, aborted) is not reported: only finished files count.
+        return {q: {**song, "files": [f for f in song["files"] if f["done"]]} for q, song in snapshot().items()}
 
 
-def fetch(query, pick, dest, share=(), search_wait=20, timeout=600, echo=print, progress=lambda files: None):
-    """Search `query`, let `pick` choose results, download them into `dest` and wait up to `timeout` seconds,
-    sharing the `share` folders meanwhile. `progress` gets the file list (as below) every couple of seconds.
-    Returns {"found": n, "files": [{"username", "path", "size", "bytes", "speed", "done", "local_path", "state"}]}."""
+def fetch(queries, pick, dest, share=(), search_wait=20, timeout=600, echo=print, progress=lambda songs: None,
+          cancelled=lambda: False, skipped=lambda: ()):
+    """Search every query in one session, let `pick(query, results)` choose results, download them all into `dest`
+    and wait up to `timeout` seconds, sharing the `share` folders meanwhile. `progress` gets the result below
+    every couple of seconds. Stops early (aborting unfinished transfers) once `cancelled()` is true; `skipped()` lists the queries
+    to drop meanwhile.
+    Returns, per query, only the files that finished: {query: {"found": n, "files": [{"username", "path", "size", "bytes", "speed", "done", "local_path",
+    "state"}]}}."""
     Path(dest).mkdir(parents=True, exist_ok=True)
-    return asyncio.run(_fetch(query, pick, dest, share, search_wait, timeout, echo, progress))
+    return asyncio.run(_fetch(queries, pick, dest, share, search_wait, timeout, echo, progress, cancelled, skipped))

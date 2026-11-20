@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from ..config import get_config
 from ..core import audio
 from ..jobs import job_dict
-from ..models import Batch, Decision, File, Job, Match, Mark
+from ..models import Batch, Decision, File, Job, Match
 from ..services import downloads, settings
 from . import get_session
 
@@ -55,7 +55,6 @@ def summary(session=Depends(get_session, scope="function")):
     """Counts for the home page."""
     count = lambda *where: session.scalar(select(func.count()).select_from(File).where(*where))
     library = (File.area == "library", File.present.is_(True))
-    marks = {m.spotify_id for m in session.scalars(select(Mark)).all()}
     matches = session.scalars(select(Match)).all()
     review = downloads.review_view(session)
     pending = [s for s in (review or {}).get("songs", []) if not s.get("decision")]
@@ -66,10 +65,9 @@ def summary(session=Depends(get_session, scope="function")):
         "inbox": count(*library, File.kind == "inbox"),
         "rejected": count(*library, File.kind == "rejected"),
         "unsorted": count(*library, File.kind == "unsorted"),
-        "missing": sum(m.status == "missing" and m.spotify_id not in marks for m in matches),
+        "missing": sum(m.status == "missing" for m in matches),
         "check": sum(m.status == "maybe" for m in matches),
         "waiting_downloads": sum(m.status != "have" and bool(m.download_song_key) for m in matches),
-        "marked_downloaded": sum(m.status != "have" and m.spotify_id in marks for m in matches),
         "review_songs": len((review or {}).get("songs", [])),
         "review_pending": len(pending), "review_decided": len(decided),
         "review_generated": (review or {}).get("generated"),

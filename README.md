@@ -53,7 +53,7 @@ uv run --project ~/Projects/dj-hub/backend djhub apply plan.json --apply
 uv run --project ~/Projects/dj-hub/backend djhub undo --apply
 ```
 
-- **Soulseek**: the Download button on a Discover card (or `djhub soulseek Artist Title`) searches Soulseek for MP3 files of 320 kbps or better and downloads up to 10 versions into the `Soulseek` folder inside the first download folder, so the Downloads page can pick the best one. It connects only while it runs, and shares `Genres` (read-only) meanwhile. Minimum bitrate and versions per song are in Settings.
+- **Soulseek**: the Download button on a Discover or Playlists row, or "Download selected" for several ticked songs (or `djhub soulseek "Artist Title" ...`), searches Soulseek in one session for MP3 files of 320 kbps or better and downloads up to 10 versions of each song into the `Soulseek` folder inside the first download folder, so the Downloads page can pick the best one. It connects only while it runs, and shares `Genres` (read-only) meanwhile. Minimum bitrate and versions per song are in Settings.
 
 Other commands: `scan`, `find`, `remove`, `fix-tags`, `retag`, `intake`, `intake-decided`, `dupes`, `history`, `review`, `analyze`, `refresh-playlists`, `scan-library`, and for new music `discover`, `candidates`, `mark`, `soulseek`.
 

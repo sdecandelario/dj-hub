@@ -15,8 +15,11 @@ export function ListToolbar({ search, onSearch, placeholder, empty, copyText, cs
 }) {
   return (
     <div className="row" style={{ marginBottom: 10 }}>
-      <input className="search" placeholder={placeholder} value={search} onChange={e => onSearch(e.target.value)}
-        aria-label={placeholder} />
+      <span className="search-wrap">
+        <input className="search" placeholder={placeholder} value={search} onChange={e => onSearch(e.target.value)}
+          aria-label={placeholder} />
+        {search && <button className="clear" aria-label="Clear search" title="Clear" onClick={() => onSearch('')}>×</button>}
+      </span>
       {children}
       <span className="spacer" />
       <button onClick={() => navigator.clipboard.writeText(copyText())} disabled={empty}>Copy list</button>

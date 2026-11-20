@@ -1,4 +1,4 @@
-"""Spotify playlists, their match against the library, 'downloaded' ticks and the Spotify login."""
+"""Spotify playlists, their match against the library, the Spotify login."""
 import html
 import secrets
 import time
@@ -29,10 +29,6 @@ class PlaylistPatch(BaseModel):
     project: str | None = None
     tracked: bool | None = None
     position: int | None = Field(None, ge=0)
-
-
-class MarkBody(BaseModel):
-    downloaded: bool
 
 
 @router.get("/playlists")
@@ -71,12 +67,6 @@ def remove(playlist_id: str, session=Depends(get_session, scope="function")):
     if row is None:
         raise HTTPException(404, "Playlist not found")
     session.delete(row)
-    return {"ok": True}
-
-
-@router.put("/playlists/marks/{spotify_id}")
-def mark(spotify_id: str, body: MarkBody, session=Depends(get_session, scope="function")):
-    playlists.set_mark(session, spotify_id, body.downloaded)
     return {"ok": True}
 
 

@@ -453,3 +453,25 @@ def test_apply_plan_edge_cases(env):
                                  {"source": two.name, "to": "Genres/X", "action": "fly"},
                                  {"source": "00 Inbox/B - Two.mp3", "to": "Elsewhere/X", "action": "move"}]})
     assert len(p.problems) == 3 and not p.steps
+
+
+def test_new_genre_and_sessions_in_one_plan(env):
+    fake_audio(env.root / "00 Inbox" / "Soft Cell - Tainted Love.mp3")
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3", b"y")
+    items = [{"source": "00 Inbox/Soft Cell - Tainted Love.mp3", "to": "Genres/Brand New", "action": "move"},
+             {"source": "00 Inbox/Soft Cell - Tainted Love.mp3", "to": "Sessions/Party A", "action": "copy"},
+             {"source": "00 Inbox/Soft Cell - Tainted Love.mp3", "to": "Sessions/Party B", "action": "copy"},
+             # no genre yet: a session copy is refused
+             {"source": "00 Inbox/Yazoo - Situation.mp3", "to": "Sessions/Party A", "action": "copy"}]
+    p = plan("apply", {"items": items})
+    assert [s.action for s in p.steps] == ["move", "copy", "copy"]
+    assert "New genre folder: Brand New" in p.notes
+    assert len(p.problems) == 1 and "genre before" in p.problems[0]
+
+
+def test_new_genre_name_cannot_differ_only_by_case(env):
+    (env.root / "Genres" / "Post-Punk").mkdir(parents=True, exist_ok=True)
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
+    p = plan("apply", {"items": [{"source": "00 Inbox/Yazoo - Situation.mp3", "to": "Genres/post-punk",
+                                  "action": "move"}]})
+    assert not p.steps and "looks like" in p.problems[0]

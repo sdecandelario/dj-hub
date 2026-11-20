@@ -110,6 +110,32 @@ def test_jobs_endpoint_validates_type_and_params(client, env):
     assert client.get("/api/batches?limit=100000").status_code == 422
 
 
+def test_finished_jobs_can_be_removed_but_running_ones_cannot(client, env):
+    with session_scope() as s:
+        s.add(Job(id=1, type="analyze", status="interrupted"))
+        s.add(Job(id=2, type="analyze", status="running"))
+    assert client.delete("/api/jobs/1").status_code == 200
+    assert client.get("/api/jobs/1").status_code == 404
+    assert client.delete("/api/jobs/2").status_code == 400
+    assert client.delete("/api/jobs/99").status_code == 404
+
+
+def test_skip_marks_one_item_of_a_running_job(client, env, handlers):
+    seen = {}
+
+    def work(ctx):
+        seen["ctx"] = ctx
+        return {"message": "ok"}
+    handlers("skippable", work)
+    job_id = runner.run_sync("skippable", {}, echo=None)
+    assert client.post(f"/api/jobs/{job_id}/skip", json={"item": "A B"}).json() == {"ok": False}   # no longer running
+    ctx = seen["ctx"]
+    runner._contexts[job_id] = ctx
+    assert client.post(f"/api/jobs/{job_id}/skip", json={"item": "A B"}).json() == {"ok": True}
+    assert ctx.skipped == {"A B"}
+    runner._contexts.pop(job_id)
+
+
 def test_bad_bodies_are_422_or_400_not_500(client):
     assert client.post("/api/batches/preview", json={"kind": "nope", "payload": {}}).status_code == 422
     assert client.post("/api/batches/preview", json={"kind": "apply", "payload": {"items": [1]}}).status_code == 400

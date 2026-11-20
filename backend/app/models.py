@@ -158,12 +158,6 @@ class Match(Base):
     download_status: Mapped[str] = mapped_column(String, default="")              # have | maybe
 
 
-class Mark(Base):
-    """'Downloaded' tick on a Spotify track."""
-    __tablename__ = "marks"
-    spotify_id: Mapped[str] = mapped_column(String, primary_key=True)
-
-
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String, primary_key=True)

@@ -103,10 +103,6 @@ def upgrade():
     with op.batch_alter_table('lastfm_cache', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_lastfm_cache_fetched_at'), ['fetched_at'], unique=False)
 
-    op.create_table('marks',
-    sa.Column('spotify_id', sa.String(), nullable=False),
-    sa.PrimaryKeyConstraint('spotify_id')
-    )
     op.create_table('matches',
     sa.Column('spotify_id', sa.String(), nullable=False),
     sa.Column('status', sa.String(), nullable=False),
@@ -234,7 +230,6 @@ def downgrade():
     op.drop_table('settings')
     op.drop_table('playlists')
     op.drop_table('matches')
-    op.drop_table('marks')
     with op.batch_alter_table('lastfm_cache', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_lastfm_cache_fetched_at'))
 

@@ -1,13 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlaylistInfo, type PlaylistTrack } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { isRunning, startJob, useActiveJobs, useSoulseekJobs } from '../components/jobsContext'
 import { ListToolbar } from '../components/ListToolbar'
+import { useSelection } from '../components/useSelection'
+import { DownloadPanel, DownloadSelectedButton } from '../components/SoulseekDownloads'
 import { Badge, Card, Empty, ErrorNote, StatusBadge } from '../components/ui'
 import { when } from '../components/format'
 
-type Filter = 'missing' | 'maybe' | 'waiting' | 'downloaded' | 'have' | 'all'
+type Filter = 'missing' | 'maybe' | 'waiting' | 'have' | 'all'
 
 const STATUS_LABEL = { have: 'In library', maybe: 'Check', missing: 'Missing' }
 
@@ -16,27 +18,20 @@ export default function Playlists() {
   const [filter, setFilter] = useState<Filter>('missing')
   const [search, setSearch] = useState('')
   const jobs = useActiveJobs()
-  const client = useQueryClient()
+  const downloads = useSoulseekJobs()
+  const picked = useSelection()
   const lists = useQuery({ queryKey: ['playlists'], queryFn: () => api.get<PlaylistInfo[]>('/playlists') })
   const tracks = useQuery({
     queryKey: ['tracks', tab],
     queryFn: () => api.get<PlaylistTrack[]>(`/playlists/tracks?playlist=${tab}`),
   })
-  const mark = useMutation({
-    mutationFn: ({ id, downloaded }: { id: string; downloaded: boolean }) =>
-      api.put(`/playlists/marks/${id}`, { downloaded }),
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: ['tracks'] })
-      client.invalidateQueries({ queryKey: ['playlists'] })
-    },
-  })
+  const download = useMutation({ mutationFn: (query: string) => startJob('soulseek_download', { queries: [query] }) })
 
   const all = useMemo(() => tracks.data ?? [], [tracks.data])
   const counts = useMemo(() => ({
-    missing: all.filter(t => t.status === 'missing' && !t.downloaded).length,
+    missing: all.filter(t => t.status === 'missing').length,
     maybe: all.filter(t => t.status === 'maybe').length,
     waiting: all.filter(t => t.status !== 'have' && t.download).length,
-    downloaded: all.filter(t => t.status !== 'have' && t.downloaded).length,
     have: all.filter(t => t.status === 'have').length,
     all: all.length,
   }), [all])
@@ -44,15 +39,18 @@ export default function Playlists() {
   const q = search.toLowerCase()
   const rows = all.filter(t => {
     const ok = {
-      missing: t.status === 'missing' && !t.downloaded,
+      missing: t.status === 'missing',
       maybe: t.status === 'maybe',
       waiting: t.status !== 'have' && !!t.download,
-      downloaded: t.status !== 'have' && t.downloaded,
       have: t.status === 'have',
       all: true,
     }[filter]
     return ok && `${t.artists.join(' ')} ${t.title}`.toLowerCase().includes(q)
   })
+
+  const queryOf = (t: PlaylistTrack) => `${t.artists[0] ?? ''} ${t.title}`
+  const downloadable = rows.filter(t => t.status !== 'have')
+  const ticked = downloadable.filter(t => picked.selected.has(t.spotify_id))
 
   const current = lists.data?.find(p => p.id === tab)
 
@@ -92,8 +90,6 @@ export default function Playlists() {
           selected={filter === 'waiting'} onClick={() => setFilter('waiting')} />
         <Card label="Check" value={counts.maybe} hint="Other version or similar title" selected={filter === 'maybe'}
           onClick={() => setFilter('maybe')} />
-        <Card label="Marked downloaded" value={counts.downloaded} selected={filter === 'downloaded'}
-          onClick={() => setFilter('downloaded')} />
         <Card label="In library" value={counts.have} selected={filter === 'have'} onClick={() => setFilter('have')} />
         <Card label="All" value={counts.all} selected={filter === 'all'} onClick={() => setFilter('all')} />
       </div>
@@ -104,18 +100,33 @@ export default function Playlists() {
           ['Artist', 'Title', 'Status', 'Playlists', 'Projects', 'Local match'],
           ...rows.map(t => [t.artists.join(', '), t.title, STATUS_LABEL[t.status], t.playlists.join('; '),
             t.projects.join('; '), t.match?.relative_path ?? '']),
-        ]} />
+        ]}>
+        <DownloadSelectedButton queries={ticked.map(queryOf)} onStarted={picked.clear} />
+      </ListToolbar>
       <div className="panel flush table-wrap">
         <table>
           <thead>
             <tr>
+              <th><input type="checkbox" aria-label="Select all" disabled={!downloadable.length}
+                checked={!!downloadable.length && ticked.length === downloadable.length}
+                onChange={e => picked.setAll(downloadable.map(t => t.spotify_id), e.target.checked)} /></th>
               <th>Artist</th><th>Title</th><th>Status</th><th>Local file or download</th>
-              <th>Projects</th>{tab === 'all' && <th>Playlists</th>}<th>Downloaded</th>
+              <th>Projects</th>{tab === 'all' && <th>Playlists</th>}<th></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(t => (
-              <tr key={t.spotify_id}>
+            {rows.map(t => {
+              const query = queryOf(t)
+              const job = downloads.get(query)
+              return (
+              <Fragment key={t.spotify_id}>
+              <tr>
+                <td>
+                  {t.status !== 'have' && (
+                    <input type="checkbox" aria-label="Select" checked={picked.selected.has(t.spotify_id)}
+                      onChange={() => picked.toggle(t.spotify_id)} />
+                  )}
+                </td>
                 <td>{t.artists.join(', ')}</td>
                 <td><a href={`https://open.spotify.com/track/${t.spotify_id}`} target="_blank" rel="noreferrer">{t.title}</a></td>
                 <td><StatusBadge status={t.status} label={STATUS_LABEL[t.status]} /></td>
@@ -127,14 +138,22 @@ export default function Playlists() {
                 </td>
                 <td>{t.projects.map(p => <Badge key={p}>{p}</Badge>)}</td>
                 {tab === 'all' && <td><small>{t.playlists.join(', ')}</small></td>}
-                <td>
+                <td className="actions">
                   {t.status !== 'have' && (
-                    <input type="checkbox" checked={t.downloaded} aria-label="Downloaded"
-                      onChange={e => mark.mutate({ id: t.spotify_id, downloaded: e.target.checked })} />
+                    <button className="small" disabled={isRunning(jobs, 'soulseek_download') || download.isPending}
+                      title="Search Soulseek (MP3 320) and download the best versions into the download folder"
+                      onClick={() => download.mutate(query)}>
+                      Download
+                    </button>
                   )}
                 </td>
               </tr>
-            ))}
+              {job && t.status !== 'have' && (
+                <tr><td colSpan={tab === 'all' ? 8 : 7}><DownloadPanel job={job} query={query} /></td></tr>
+              )}
+              </Fragment>
+              )
+            })}
           </tbody>
         </table>
         {!rows.length && tracks.data && <Empty>No tracks match this filter.</Empty>}

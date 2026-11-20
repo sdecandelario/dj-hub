@@ -260,8 +260,8 @@ def cmd_mark(args):
 
 
 def cmd_soulseek(args):
-    """Search Soulseek for a song and download its best versions into the download folder."""
-    runner.run_sync("soulseek_download", {"query": " ".join(args.query)}, echo=print)
+    """Search Soulseek for songs (one session) and download their best versions into the download folder."""
+    runner.run_sync("soulseek_download", {"queries": args.query}, echo=print)
 
 
 def main(argv=None):
@@ -319,8 +319,8 @@ def main(argv=None):
     p.add_argument("--tracks", type=int, default=2, help="top tracks taken per artist")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_discover)
-    p = sub.add_parser("soulseek", help="download versions of a song from Soulseek into the download folder")
-    p.add_argument("query", nargs="+", help="artist and title")
+    p = sub.add_parser("soulseek", help="download versions of songs from Soulseek into the download folder")
+    p.add_argument("query", nargs="+", help='one "Artist Title" per song')
     p.set_defaults(func=cmd_soulseek)
     p = sub.add_parser("candidates", help="stored new-song candidates")
     p.add_argument("--status", choices=("new", "wanted", "dismissed", "in_library"))

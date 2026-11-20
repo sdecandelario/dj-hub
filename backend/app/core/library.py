@@ -272,6 +272,8 @@ class _ApplyPlanner:
         self.gone = set()   # files an earlier step moved away
         self.genres = {fp: set(genre_folders(copies)) for fp, copies in self.songs.items()}
         self.plan = Plan("apply")
+        genres_dir = self.root / GENRES
+        self.folders = {p.name for p in genres_dir.iterdir() if p.is_dir()} if genres_dir.is_dir() else set()
 
     def run(self, items):
         for item in items:
@@ -299,9 +301,18 @@ class _ApplyPlanner:
                              "use copy")
 
     def _check_genre(self, source, fp, kind, folder, action, to_kind, to_name):
-        """A song keeps one genre folder: adding a second one is refused."""
+        """A song keeps one genre folder: adding a second one is refused, and so is a session copy of a song
+        that has none yet (its genre copy is the safe one)."""
+        if to_kind == "session" and not self.genres[fp]:
+            raise ValueError(f"{source}: give the song a genre before adding it to a session")
         if to_kind != "genre":
             return
+        if to_name not in self.folders:
+            clash = next((f for f in self.folders if f.lower() == to_name.lower()), None)
+            if clash:
+                raise ValueError(f"{source}: genre {to_name!r} looks like the existing {clash!r}")
+            self.folders.add(to_name)
+            self.plan.notes.append(f"New genre folder: {to_name}")
         after = set(self.genres[fp])
         if action == "move" and kind == "genre":
             after.discard(folder)

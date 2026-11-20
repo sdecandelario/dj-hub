@@ -34,6 +34,7 @@ class JobContext:
         self.params = params
         self.echo = echo
         self._cancel = threading.Event()
+        self.skipped = set()   # items of a multi-item job the user dropped (the job goes on without them)
 
     def progress(self, done=None, total=None, message=None):
         with session_scope() as s:
@@ -117,6 +118,15 @@ class JobRunner:
             job_id = job.id
         self._run(type_, JobContext(job_id, params or {}, echo=echo))
         return job_id
+
+    def skip(self, job_id, item):
+        """Drop one item of a running job. False when the job is not running here."""
+        with self._lock:
+            ctx = self._contexts.get(job_id)
+        if ctx is None:
+            return False
+        ctx.skipped.add(item)
+        return True
 
     def cancel(self, job_id):
         with self._lock:

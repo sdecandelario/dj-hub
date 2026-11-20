@@ -34,8 +34,9 @@ def clean_params(type_, params):
         genre = params.get("genre")
         return {"genre": genre} if isinstance(genre, str) and genre else {}
     if type_ == "soulseek_download":
-        query = params.get("query")
-        return {"query": query.strip()} if isinstance(query, str) and query.strip() else {}
+        queries = params.get("queries")
+        clean = [q.strip() for q in queries if isinstance(q, str) and q.strip()] if isinstance(queries, list) else []
+        return {"queries": list(dict.fromkeys(clean))} if clean else {}
     if type_ == "spotify_refresh":
         ids = params.get("ids")
         return {"ids": [i for i in ids if isinstance(i, str)]} if isinstance(ids, list) and ids else {}
@@ -74,6 +75,16 @@ def cancel(job_id: int):
     return {"ok": runner.cancel(job_id)}
 
 
+class SkipBody(BaseModel):
+    item: str
+
+
+@router.post("/jobs/{job_id}/skip")
+def skip(job_id: int, body: SkipBody):
+    """Drop one item (a Soulseek song query) of a running job; the others carry on."""
+    return {"ok": runner.skip(job_id, body.item)}
+
+
 @router.post("/jobs/{job_id}/resume")
 def resume(job_id: int, session=Depends(get_session, scope="function")):
     row = session.get(Job, job_id)
@@ -81,6 +92,18 @@ def resume(job_id: int, session=Depends(get_session, scope="function")):
         raise HTTPException(400, "Only interrupted, failed or cancelled jobs can be resumed")
     session.commit()
     return {"id": runner.submit(row.type, job_id=job_id)}
+
+
+@router.delete("/jobs/{job_id}")
+def remove(job_id: int, session=Depends(get_session, scope="function")):
+    """Forget a finished job (its row only; downloaded files stay where they are)."""
+    row = session.get(Job, job_id)
+    if row is None:
+        raise HTTPException(404, "Job not found")
+    if row.status in ("queued", "running"):
+        raise HTTPException(400, "Cancel the job first")
+    session.delete(row)
+    return {"ok": True}
 
 
 def _active_snapshot():

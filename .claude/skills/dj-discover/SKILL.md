@@ -29,6 +29,6 @@ Each line shows the candidate ID, the "because" seeds, `[you already own N ...]`
 3. Review the top candidates against the project profiles in `~/Projects/dj-hub/AGENTS.md`: name the project(s) each track fits, say so when it fits none. Do not add tracks that are not in the command output.
 4. Flag `[check: you may have ...]` items (other version or similar title) and `[in playlist ...]` items, so the user does not buy twice.
 5. Mark what the user picks with `djhub mark wanted ...` and what they reject with `djhub mark dismissed ...`. Ask before dismissing, since it is permanent unless marked `new` again.
-6. The user downloads the wanted songs: the Download button on a Discover card, or `djhub soulseek "Artist Title"` (ask first: it logs in to Soulseek, downloads up to 10 MP3 versions of 320 kbps or better into `<first download folder>/Soulseek`, and shares the `Genres` folder while connected). Then continue with the `dj-library` skill (`review`, `intake-decided`, sort the Inbox).
+6. The user downloads the wanted songs: the Download button on a Discover card, or `djhub soulseek "Artist Title" ["Artist Title" ...]` (ask first: it logs in to Soulseek once, downloads up to 10 MP3 versions of each song of 320 kbps or better into `<first download folder>/Soulseek`, and shares the `Genres` folder while connected). Then continue with the `dj-library` skill (`review`, `intake-decided`, sort the Inbox).
 
 Last.fm returns popular tracks, which can skew to hits. Say so if results look too mainstream for the folder.

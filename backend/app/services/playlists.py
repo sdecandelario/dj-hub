@@ -5,7 +5,7 @@ from ..core import matching
 from ..integrations import spotify
 from ..db import session_scope
 from ..jobs import handler
-from ..models import File, Mark, Match, Playlist, PlaylistTrack, Review, now
+from ..models import File, Match, Playlist, PlaylistTrack, Review, now
 
 
 def add_playlist(session, value, project=""):
@@ -159,19 +159,14 @@ def overview(session):
     """Playlists with counts per status, for tabs and summary cards."""
     playlists = session.scalars(select(Playlist).order_by(Playlist.position)).all()
     matches = {m.spotify_id: m for m in session.scalars(select(Match)).all()}
-    marks = {m.spotify_id for m in session.scalars(select(Mark)).all()}
     out = []
     for p in playlists:
         tracks = session.scalars(select(PlaylistTrack).where(PlaylistTrack.playlist_id == p.id)).all()
-        counts = {"have": 0, "maybe": 0, "missing": 0, "downloaded": 0, "waiting": 0, "total": len(tracks)}
+        counts = {"have": 0, "maybe": 0, "missing": 0, "waiting": 0, "total": len(tracks)}
         for t in tracks:
             m = matches.get(t.spotify_id)
             status = m.status if m else "missing"
-            downloaded = status != "have" and t.spotify_id in marks
-            if not (status == "missing" and downloaded):   # a ticked track counts as downloaded, not missing
-                counts[status] += 1
-            if downloaded:
-                counts["downloaded"] += 1
+            counts[status] += 1
             if status != "have" and m and m.download_song_key:
                 counts["waiting"] += 1
         out.append({"id": p.id, "name": p.name, "owner": p.owner, "cover": p.cover, "project": p.project, "tracked": p.tracked,
@@ -185,7 +180,6 @@ def tracks(session, playlist_id=None):
     query = select(PlaylistTrack).order_by(PlaylistTrack.playlist_id, PlaylistTrack.position)
     rows = session.scalars(query).all()
     matches = {m.spotify_id: m for m in session.scalars(select(Match)).all()}
-    marks = {m.spotify_id for m in session.scalars(select(Mark)).all()}
     in_lists = {}
     for t in rows:
         in_lists.setdefault(t.spotify_id, []).append(t.playlist_id)
@@ -206,19 +200,10 @@ def tracks(session, playlist_id=None):
                 "artist": m.matched_artist, "note": m.note},
             "download": None if not m or not m.download_song_key else {
                 "song_key": m.download_song_key, "status": m.download_status},
-            "downloaded": t.spotify_id in marks,
             "playlists": [playlists[i].name if i in playlists else i for i in lists],
             "projects": sorted({playlists[i].project for i in lists if i in playlists and playlists[i].project}),
         })
     return out
-
-
-def set_mark(session, spotify_id, downloaded):
-    row = session.get(Mark, spotify_id)
-    if downloaded and row is None:
-        session.add(Mark(spotify_id=spotify_id))
-    elif not downloaded and row is not None:
-        session.delete(row)
 
 
 def playlists_for_path(session, path):

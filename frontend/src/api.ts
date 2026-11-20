@@ -251,7 +251,7 @@ export type PlaylistInfo = {
   project: string
   tracked: boolean
   refreshed_at: string | null
-  counts: { have: number; maybe: number; missing: number; downloaded: number; waiting: number; total: number }
+  counts: { have: number; maybe: number; missing: number; waiting: number; total: number }
 }
 
 export type PlaylistTrack = {
@@ -263,7 +263,6 @@ export type PlaylistTrack = {
   status: 'have' | 'maybe' | 'missing'
   match: { path: string; relative_path: string; title: string; artist: string; note: string } | null
   download: { song_key: string; status: string } | null
-  downloaded: boolean
   playlists: string[]
   projects: string[]
 }
@@ -305,7 +304,6 @@ export type Summary = {
   missing: number
   check: number
   waiting_downloads: number
-  marked_downloaded: number
   review_songs: number
   review_pending: number
   review_decided: number
