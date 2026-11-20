@@ -136,6 +136,21 @@ def test_save_keeps_status_and_dismissed_never_return(env):
         service.set_status(s, [ids["Fresh"]], "maybe")
 
 
+def test_wanted_song_in_a_genre_folder_becomes_in_library(env):
+    with session_scope() as s:
+        _seed_library(s)
+        _run(s)
+        ids = {r["title"]: r["id"] for r in service.list_candidates(s)}
+        service.set_status(s, [ids["Fresh"]], "wanted")
+        assert service.complete_wanted(s) == 0   # not in the library yet
+        s.add(File(path="/lib/Genres/EBM & Industrial/Newcomer - Fresh.mp3", area="library", kind="genre",
+                   folder="EBM & Industrial", rel_path="Genres/EBM & Industrial/Newcomer - Fresh.mp3",
+                   artist="Newcomer", title="Fresh"))
+        s.flush()
+        assert service.complete_wanted(s) == 1
+        assert [r["title"] for r in service.list_candidates(s, status="in_library")] == ["Fresh"]
+
+
 def test_candidates_show_playlists_that_already_have_the_song(env):
     from app.models import Playlist, PlaylistTrack
     with session_scope() as s:
@@ -212,3 +227,18 @@ def test_lastfm_answers_are_cached_for_a_day_without_the_key(env):
     assert len(calls) == 2
     cached({**params, "artist": "bad"}), cached({**params, "artist": "bad"})
     assert len(calls) == 4   # errors are never cached
+
+
+def test_http_fetch_retries_throttling_and_reports_the_status(monkeypatch):
+    import urllib.error
+    from app.integrations import lastfm
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(1)
+        raise urllib.error.HTTPError("https://x", 429, "Too Many Requests", {}, None)
+    monkeypatch.setattr(lastfm.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(lastfm.time, "sleep", lambda s: None)
+    with pytest.raises(lastfm.LastfmError, match="HTTP 429"):
+        lastfm.http_fetch({"method": "m"})
+    assert len(calls) == lastfm.RETRIES + 1

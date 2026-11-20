@@ -11,10 +11,17 @@ from ..core import audio
 from ..core import downloads as dl
 from ..db import session_scope
 from ..jobs import handler
-from ..models import Decision, File, Review, now
+from ..models import Decision, File, Job, Review, now
 from . import analysis, library, playlists, settings
 
 
+
+
+def soulseek_finished(session):
+    """Resolved paths of the files our own Soulseek downloads have completed: no need to wait for them to settle."""
+    jobs = session.scalars(select(Job).where(Job.type == "soulseek_download").order_by(Job.id.desc()).limit(50)).all()
+    return {str(Path(f["local_path"]).resolve()) for job in jobs for f in (job.summary or {}).get("files", [])
+            if f.get("done") and f.get("local_path")}
 
 
 @handler("review_downloads")
@@ -26,7 +33,9 @@ def run_review(ctx):
     cfg = get_config()
     with session_scope() as s:
         sources = [Path(p).resolve() for p in settings.sources(s)]
-    files, skipped = dl.find_files(sources, time.time(), cfg.settle_seconds)
+    with session_scope() as s:
+        finished = soulseek_finished(s)
+    files, skipped = dl.find_files(sources, time.time(), cfg.settle_seconds, finished)
     versions = audio.tool_versions()
     items = []
     for source, path in files:

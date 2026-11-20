@@ -141,6 +141,23 @@ def save(session, result):
     return rows
 
 
+def complete_wanted(session):
+    """Wanted songs that are now in a genre folder become 'in_library' (set by scans, never by hand).
+    Returns how many changed."""
+    wanted = session.scalars(select(Candidate).where(Candidate.status == "wanted")).all()
+    if not wanted:
+        return 0
+    rows = session.scalars(select(File).where(File.area == "library", File.kind == "genre",
+                                              File.present.is_(True))).all()
+    index = matching.build_index([matching.local_entry(r.path, r.rel_path, artist=r.artist, title=r.title)
+                                  for r in rows])
+    done = [c for c in wanted
+            if matching.match_track({"title": c.title, "artists": [c.artist]}, index)["status"] == "have"]
+    for c in done:
+        c.status = "in_library"
+    return len(done)
+
+
 def set_status(session, ids, status):
     """Mark candidates wanted, dismissed or back to new. Returns the rows changed."""
     if status not in STATUSES:

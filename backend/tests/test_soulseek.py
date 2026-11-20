@@ -48,7 +48,7 @@ def test_download_uses_the_settings_and_the_first_download_folder(env, monkeypat
     from app.services import soulseek as service
     seen = {}
 
-    def fake_fetch(query, pick, dest, share=(), echo=print):
+    def fake_fetch(query, pick, dest, share=(), echo=print, progress=None):
         seen.update(query=query, dest=dest, share=list(share), picked=pick([result(f"u{i}") for i in range(15)]))
         return {"found": 15, "files": []}
 

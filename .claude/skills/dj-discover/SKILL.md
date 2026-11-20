@@ -16,11 +16,11 @@ Needs `LASTFM_API_KEY` in `.env`. Never print it. If it is missing, tell the use
 Results are saved in the dj-hub database (not in the library), so they persist between sessions:
 
 ```sh
-uv run --project ~/Projects/dj-hub/backend djhub candidates [--status new|wanted|dismissed] [--genre "<folder>"]
+uv run --project ~/Projects/dj-hub/backend djhub candidates [--status new|wanted|dismissed|in_library] [--genre "<folder>"]
 uv run --project ~/Projects/dj-hub/backend djhub mark wanted|dismissed|new ID [ID ...]
 ```
 
-Each line shows the candidate ID, the "because" seeds, `[you already own N ...]`, `[check: ...]` and `[in playlist ...]` (already in one of the user's Spotify playlists). `dismissed` songs are never suggested again; `wanted` songs stay in the list until downloaded.
+Each line shows the candidate ID, the "because" seeds, `[you already own N ...]`, `[check: ...]` and `[in playlist ...]` (already in one of the user's Spotify playlists). `dismissed` songs are never suggested again; `wanted` songs stay in the list until a library scan finds them in a genre folder; then they become `in_library`.
 
 ## Workflow
 

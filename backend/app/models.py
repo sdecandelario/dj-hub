@@ -171,7 +171,7 @@ class Setting(Base):
 
 
 class Candidate(Base):
-    """A song suggested by discovery. Status new | wanted | dismissed; dismissed never come back."""
+    """A song suggested by discovery. Status new | wanted | dismissed | in_library (a wanted song that reached a genre folder); dismissed never come back."""
     __tablename__ = "candidates"
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String, unique=True, index=True)   # normalized "artist|title"

@@ -1,19 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { api, type Candidate } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { isRunning, startJob, useActiveJobs, useSoulseekJobs } from '../components/jobsContext'
 import { ListToolbar } from '../components/ListToolbar'
+import { DownloadPanel } from '../components/SoulseekDownloads'
 import { Badge, Card, Empty, ErrorNote } from '../components/ui'
 
 type Status = Candidate['status']
 
-const LABEL: Record<Status, string> = { new: 'New', wanted: 'Wanted', dismissed: 'Dismissed' }
+const ANY = '*any'
+const NONE = '*none'
+
+const LABEL: Record<Status, string> = { new: 'New', wanted: 'Wanted', dismissed: 'Dismissed', in_library: 'In library' }
 
 export default function Discover() {
   const [status, setStatus] = useState<Status>('new')
   const [genre, setGenre] = useState('')
   const [search, setSearch] = useState('')
+  const [playlist, setPlaylist] = useState('')   // '' all, ANY / NONE, or a playlist name
   const jobs = useActiveJobs()
+  const downloads = useSoulseekJobs()
   const client = useQueryClient()
   const genres = useQuery({ queryKey: ['candidates', 'genres'], queryFn: () => api.get<string[]>('/candidates/genres') })
   const list = useQuery({ queryKey: ['candidates', 'list'], queryFn: () => api.get<Candidate[]>('/candidates') })
@@ -33,8 +39,14 @@ export default function Discover() {
     new: all.filter(c => c.status === 'new').length,
     wanted: all.filter(c => c.status === 'wanted').length,
     dismissed: all.filter(c => c.status === 'dismissed').length,
+    in_library: all.filter(c => c.status === 'in_library').length,
   }), [all])
-  const rows = all.filter(c => c.status === status && `${c.artist} ${c.title}`.toLowerCase().includes(q))
+  const inStatus = all.filter(c => c.status === status)
+  const playlistNames = [...new Set(inStatus.flatMap(c => c.in_playlists.map(p => p.playlist)))].sort()
+  const filter = playlist === ANY || playlist === NONE || playlistNames.includes(playlist) ? playlist : ''
+  const rows = inStatus.filter(c => `${c.artist} ${c.title}`.toLowerCase().includes(q) && ({
+    '': true, [ANY]: c.in_playlists.length > 0, [NONE]: c.in_playlists.length === 0,
+  }[filter] ?? c.in_playlists.some(p => p.playlist === filter)))
   const running = isRunning(jobs, 'discover')
 
 
@@ -58,11 +70,11 @@ export default function Discover() {
         ))}
       </div>
       <div className="page-head">
-        <div className="cards" style={{ marginBottom: 0, gridTemplateColumns: 'repeat(3, 250px)' }}>
-          {(['new', 'wanted', 'dismissed'] as Status[]).map(s => (
+        <div className="cards" style={{ marginBottom: 0, gridTemplateColumns: 'repeat(4, 250px)' }}>
+          {(['new', 'wanted', 'in_library', 'dismissed'] as Status[]).map(s => (
             <Card key={s} label={LABEL[s]} value={counts[s]} selected={status === s} onClick={() => setStatus(s)}
               hint={{ new: 'Waiting for your decision', wanted: 'Download these from Soulseek',
-                dismissed: 'Never suggested again' }[s]} />
+                in_library: 'Wanted, now in a genre folder', dismissed: 'Never suggested again' }[s]} />
           ))}
         </div>
         <button className="primary" disabled={!selected || running || run.isPending} onClick={() => run.mutate(selected)}>
@@ -75,19 +87,27 @@ export default function Discover() {
           ['Artist', 'Title', 'Genre folder', 'Score', 'Because', 'Already in playlists'],
           ...rows.map(c => [c.artist, c.title, c.genre, c.score, c.because.join('; '),
             c.in_playlists.map(p => p.playlist).join('; ')]),
-        ]} />
+        ]}>
+        <select aria-label="Filter by playlist" value={filter} onChange={e => setPlaylist(e.target.value)}>
+          <option value="">All songs</option>
+          <option value={ANY}>Already in a playlist</option>
+          <option value={NONE}>Not in any playlist</option>
+          {playlistNames.map(n => <option key={n} value={n}>In {n}</option>)}
+        </select>
+      </ListToolbar>
       <div className="panel flush table-wrap">
         <table className="fixed">
           <colgroup>
-            <col style={{ width: '16%' }} /><col style={{ width: '24%' }} /><col style={{ width: '26%' }} />
-            <col /><col style={{ width: 170 }} />
+            <col style={{ width: '14%' }} /><col style={{ width: '20%' }} /><col style={{ width: '24%' }} />
+            <col /><col style={{ width: 250 }} />
           </colgroup>
           <thead>
             <tr><th>Artist</th><th>Title</th><th>Because you have</th><th>Notes</th><th className="actions">Decision</th></tr>
           </thead>
           <tbody>
             {rows.map(c => (
-              <tr key={c.id}>
+              <Fragment key={c.id}>
+              <tr>
                 <td>{c.artist}</td>
                 <td>
                   <a href={`https://open.spotify.com/search/${encodeURIComponent(`${c.artist} ${c.title}`)}`}
@@ -98,7 +118,7 @@ export default function Discover() {
                   {c.in_playlists.map(p => (
                     <div key={p.playlist}>
                       <Badge tone="accent" title="Already in this Spotify playlist, so it is on your list">
-                        In {p.playlist}{p.project && ` · ${p.project}`}
+                        {p.playlist}
                       </Badge>
                     </div>
                   ))}
@@ -129,6 +149,10 @@ export default function Discover() {
                   </div>
                 </td>
               </tr>
+              {downloads.get(`${c.artist} ${c.title}`) && (
+                <tr><td colSpan={5}><DownloadPanel job={downloads.get(`${c.artist} ${c.title}`)!} /></td></tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

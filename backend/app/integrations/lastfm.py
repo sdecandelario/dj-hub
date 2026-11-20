@@ -5,6 +5,7 @@ The API key comes from LASTFM_API_KEY (the project's .env file) and is never pri
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,15 +25,25 @@ def api_key():
     return key
 
 
+RETRY_CODES = (429, 500, 502, 503, 504)   # Last.fm throttles bursts and has short outages
+RETRIES = 3
+
+
 def http_fetch(params):
     url = API_URL + "?" + urllib.parse.urlencode(params)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return json.load(response)
-    except (urllib.error.URLError, OSError, ValueError) as error:
-        # Not `from error`: its text can carry the request URL, which contains the API key.
-        raise LastfmError(f"Last.fm request failed ({type(error).__name__})") from None
+    for attempt in range(RETRIES + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code in RETRY_CODES and attempt < RETRIES:
+                time.sleep(2 ** attempt)
+                continue
+            raise LastfmError(f"Last.fm request failed (HTTP {error.code})") from None
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            # Not `from error`: its text can carry the request URL, which contains the API key.
+            raise LastfmError(f"Last.fm request failed ({type(error).__name__})") from None
 
 
 def _as_list(value):

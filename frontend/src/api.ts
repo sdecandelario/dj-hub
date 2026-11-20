@@ -273,7 +273,7 @@ export type Candidate = {
   genre: string
   artist: string
   title: string
-  status: 'new' | 'wanted' | 'dismissed'
+  status: 'new' | 'wanted' | 'dismissed' | 'in_library'
   score: number
   /** Artists in the genre folder that point to this one. */
   because: string[]

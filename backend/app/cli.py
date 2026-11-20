@@ -323,7 +323,7 @@ def main(argv=None):
     p.add_argument("query", nargs="+", help="artist and title")
     p.set_defaults(func=cmd_soulseek)
     p = sub.add_parser("candidates", help="stored new-song candidates")
-    p.add_argument("--status", choices=("new", "wanted", "dismissed"))
+    p.add_argument("--status", choices=("new", "wanted", "dismissed", "in_library"))
     p.add_argument("--genre")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_candidates)

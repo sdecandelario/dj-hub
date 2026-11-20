@@ -45,7 +45,15 @@ def _results(request):
     return found
 
 
-async def _fetch(query, pick, dest, share, search_wait, timeout, echo):
+def _snapshot(result, transfer):
+    done = transfer.state.VALUE == TransferState.COMPLETE
+    return {"username": result.username, "path": result.path, "size": result.size,
+            "bytes": transfer.bytes_transfered, "speed": round(transfer.get_speed()),
+            "done": done, "local_path": transfer.local_path if done else None,
+            "state": transfer.state.VALUE.name.lower()}
+
+
+async def _fetch(query, pick, dest, share, search_wait, timeout, echo, progress):
     settings = Settings(credentials=credentials())
     settings.shares.download = str(dest)
     settings.shares.directories = [SharedDirectorySettingEntry(path=str(p)) for p in share]
@@ -64,21 +72,18 @@ async def _fetch(query, pick, dest, share, search_wait, timeout, echo):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline and not all(t.is_finalized() for _, t in transfers):
+            progress([_snapshot(r, t) for r, t in transfers])
             await asyncio.sleep(2)
-        out = []
-        for result, transfer in transfers:
-            done = transfer.state.VALUE == TransferState.COMPLETE
+        for _, transfer in transfers:
             if not transfer.is_finalized():
                 await client.transfers.abort(transfer)   # also removes the partial file
-            out.append({"username": result.username, "path": result.path, "size": result.size,
-                        "done": done, "local_path": transfer.local_path if done else None,
-                        "state": transfer.state.VALUE.name.lower()})
+        out = [_snapshot(r, t) for r, t in transfers]
         return {"found": len(results), "files": out}
 
 
-def fetch(query, pick, dest, share=(), search_wait=20, timeout=600, echo=print):
+def fetch(query, pick, dest, share=(), search_wait=20, timeout=600, echo=print, progress=lambda files: None):
     """Search `query`, let `pick` choose results, download them into `dest` and wait up to `timeout` seconds,
-    sharing the `share` folders meanwhile.
-    Returns {"found": n, "files": [{"username", "path", "size", "done", "local_path", "state"}]}."""
+    sharing the `share` folders meanwhile. `progress` gets the file list (as below) every couple of seconds.
+    Returns {"found": n, "files": [{"username", "path", "size", "bytes", "speed", "done", "local_path", "state"}]}."""
     Path(dest).mkdir(parents=True, exist_ok=True)
-    return asyncio.run(_fetch(query, pick, dest, share, search_wait, timeout, echo))
+    return asyncio.run(_fetch(query, pick, dest, share, search_wait, timeout, echo, progress))

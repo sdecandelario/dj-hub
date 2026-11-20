@@ -28,9 +28,10 @@ COMPILATION = re.compile(r'\b(best of|greatest|hits|collection|anthology|compila
                          r'various|bands you should know|essential|classics|now that)\b', re.I)
 
 
-def find_files(sources, now, settle_seconds=120):
+def find_files(sources, now, settle_seconds=120, finished=()):
     """Audio files in the download folders. Files changed in the last `settle_seconds`
-    are skipped (possibly still downloading)."""
+    are skipped (possibly still downloading), unless they are in `finished` (resolved paths
+    of downloads known to be complete)."""
     files, skipped = [], []
     for source in sources:
         source = Path(source)
@@ -41,7 +42,7 @@ def find_files(sources, now, settle_seconds=120):
             if (not path.is_file() or path.suffix.lower() not in EXT
                     or any(p.startswith('.') for p in rel.parts)):
                 continue
-            if now - path.stat().st_mtime < settle_seconds:
+            if now - path.stat().st_mtime < settle_seconds and str(path.resolve()) not in finished:
                 skipped.append(path)
                 continue
             files.append((source, path))

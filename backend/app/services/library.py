@@ -9,7 +9,7 @@ from ..core import library as lib
 from ..db import session_scope
 from ..jobs import handler
 from ..models import Batch, Decision, File, FileOp, Playlist, now
-from . import playlists, settings
+from . import discovery, playlists, settings
 
 _apply_lock = threading.Lock()
 
@@ -69,6 +69,7 @@ def sync_library(session, tracks=None):
             row.present = False
             gone += 1
     session.flush()
+    discovery.complete_wanted(session)
     return {"files": len(tracks), "added": added, "gone": gone}
 
 

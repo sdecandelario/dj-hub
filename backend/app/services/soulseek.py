@@ -8,13 +8,13 @@ from ..jobs import handler
 from . import settings
 
 
-def download(query, echo=print):
+def download(query, echo=print, progress=lambda files: None):
     """Search `query` and download the best candidates. Returns the integration's result plus the rules used."""
     with session_scope() as s:
         rule, folder = settings.soulseek(s), settings.soulseek_folder(s)
     pick = lambda results: rules.choose(results, query, rule["min_bitrate"], rule["candidates"])
     genres = get_config().root / GENRES   # the sorted library; Inbox, Rejected and Sessions (copies) stay private
-    result = soulseek.fetch(query, pick, folder, share=[genres] if genres.is_dir() else [], echo=echo)
+    result = soulseek.fetch(query, pick, folder, share=[genres] if genres.is_dir() else [], echo=echo, progress=progress)
     result["folder"] = str(folder)
     return result
 
@@ -26,7 +26,8 @@ def run_download(ctx):
     if not query:
         raise ValueError("Give the artist and title to search")
     try:
-        result = download(query, echo=lambda m: ctx.progress(message=m))
+        result = download(query, echo=lambda m: ctx.progress(message=m),
+                          progress=lambda files: ctx.set_summary(files=files))
     except soulseek.SoulseekError as exc:
         raise ValueError(str(exc))
     done = sum(f["done"] for f in result["files"])

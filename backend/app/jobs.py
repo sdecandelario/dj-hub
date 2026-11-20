@@ -48,6 +48,12 @@ class JobContext:
         if self.echo and message:
             self.echo(f"[{done or 0}/{total or '?'}] {message}" if total else message)
 
+    def set_summary(self, **values):
+        with session_scope() as s:
+            job = s.get(Job, self.job_id)
+            if job is not None:
+                job.summary = {**(job.summary or {}), **values}
+
     def log(self, line):
         with session_scope() as s:
             job = s.get(Job, self.job_id)
