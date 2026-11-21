@@ -1,12 +1,11 @@
 """Spotify playlists vs the library, and which waiting downloads fill the gaps."""
-import urllib.error
-
 from sqlalchemy import delete, select
 
-from ..core import matching, spotify
+from ..core import matching
+from ..integrations import spotify
 from ..db import session_scope
 from ..jobs import handler
-from ..models import File, Mark, Match, Playlist, PlaylistTrack, Review, now
+from ..models import File, Match, Playlist, PlaylistTrack, Review, now
 
 
 def add_playlist(session, value, project=""):
@@ -32,19 +31,14 @@ def run_refresh(ctx):
         names = {p.id: p.name for p in s.scalars(select(Playlist)).all() if p.name}
     if not ids:
         raise ValueError("No playlists configured. Add one in Settings.")
-    try:
-        token = spotify.spotify_token(interactive=False)
-    except (spotify.SpotifyLoginError, urllib.error.URLError, OSError, ValueError, KeyError) as error:
-        ctx.log(f"Spotify login unavailable ({error}); using the embed pages (first 100 tracks)")
-        token = None
-    ctx.log("Using Spotify Web API" if token else "Using Spotify embed pages (first 100 tracks per playlist)")
+    token = spotify.spotify_token(interactive=False)
     failed = []
     for i, playlist_id in enumerate(ids, 1):
         ctx.check()
         ctx.progress(i - 1, len(ids), f"Reading {names.get(playlist_id, playlist_id)}")
         try:
             data = spotify.fetch_playlist(playlist_id, token)
-        except (urllib.error.URLError, RuntimeError, KeyError, ValueError) as error:
+        except (OSError, RuntimeError, KeyError, ValueError) as error:   # OSError covers URLError and timeouts
             ctx.log(f"{playlist_id}: failed ({error})")
             failed.append(playlist_id)
             continue
@@ -54,13 +48,13 @@ def run_refresh(ctx):
                 row = Playlist(id=playlist_id, position=i)
                 s.add(row)
             row.name, row.owner, row.cover = data["name"], data["owner"], data["cover"]
-            row.source, row.possibly_truncated, row.refreshed_at = data["source"], data["possibly_truncated"], now()
+            row.refreshed_at = now()
             s.execute(delete(PlaylistTrack).where(PlaylistTrack.playlist_id == playlist_id))
             for position, track in enumerate(data["tracks"]):
                 s.add(PlaylistTrack(playlist_id=playlist_id, position=position, spotify_id=track["spotify_id"],
                                     title=track["title"], artists=track["artists"],
                                     duration_ms=track.get("duration_ms")))
-        ctx.log(f"{data['name']}: {len(data['tracks'])} tracks ({data['source']})")
+        ctx.log(f"{data['name']}: {len(data['tracks'])} tracks")
     ctx.progress(len(ids), len(ids), "Matching against the library")
     with session_scope() as s:
         counts = match_all(s)
@@ -78,7 +72,7 @@ def run_match(ctx):
             **counts}
 
 
-def _library_entries(session):
+def library_entries(session):
     rows = session.scalars(select(File).where(File.area == "library", File.present.is_(True),
                                               File.kind != "rejected")).all()
     return [matching.local_entry(r.path, r.rel_path, artist=r.artist, title=r.title) for r in rows]
@@ -105,21 +99,19 @@ def _unique_tracks(session):
 
 def match_all(session):
     """Match every playlist track against the library, then the gaps against the downloads."""
-    library = _library_entries(session)
+    library = library_entries(session)
     index = matching.build_index(library)
     tracks = _unique_tracks(session)
     old = {m.spotify_id: m for m in session.scalars(select(Match)).all()}
     counts = {"have": 0, "maybe": 0, "missing": 0}
-    stamp = now()
     for spotify_id, track in tracks.items():
-        result = matching.match_track(track, library, index)
+        result = matching.match_track(track, index)
         row = old.pop(spotify_id, None) or Match(spotify_id=spotify_id)
         session.add(row)
         match = result["match"] or {}
         row.status, row.path, row.relative_path = result["status"], match.get("path"), match.get("relative_path")
         row.matched_title, row.matched_artist, row.note = match.get("title", ""), match.get("artist", ""), \
             match.get("note", "")
-        row.computed_at = stamp
         counts[result["status"]] += 1
     for row in old.values():
         session.delete(row)
@@ -137,7 +129,7 @@ def link_downloads(session, tracks=None):
         row.download_song_key, row.download_status = None, ""
         if row.status == "have" or not entries or row.spotify_id not in tracks:
             continue
-        result = matching.match_track(tracks[row.spotify_id], entries, index)
+        result = matching.match_track(tracks[row.spotify_id], index)
         if result["status"] != "missing":
             entry = next(e for e in entries if e["path"] == result["match"]["path"])
             row.download_song_key, row.download_status = entry["song_key"], result["status"]
@@ -167,21 +159,17 @@ def overview(session):
     """Playlists with counts per status, for tabs and summary cards."""
     playlists = session.scalars(select(Playlist).order_by(Playlist.position)).all()
     matches = {m.spotify_id: m for m in session.scalars(select(Match)).all()}
-    marks = {m.spotify_id for m in session.scalars(select(Mark)).all()}
     out = []
     for p in playlists:
         tracks = session.scalars(select(PlaylistTrack).where(PlaylistTrack.playlist_id == p.id)).all()
-        counts = {"have": 0, "maybe": 0, "missing": 0, "downloaded": 0, "waiting": 0, "total": len(tracks)}
+        counts = {"have": 0, "maybe": 0, "missing": 0, "waiting": 0, "total": len(tracks)}
         for t in tracks:
             m = matches.get(t.spotify_id)
             status = m.status if m else "missing"
             counts[status] += 1
-            if status != "have" and t.spotify_id in marks:
-                counts["downloaded"] += 1
             if status != "have" and m and m.download_song_key:
                 counts["waiting"] += 1
-        out.append({"id": p.id, "name": p.name, "owner": p.owner, "cover": p.cover, "source": p.source,
-                    "possibly_truncated": p.possibly_truncated, "project": p.project, "tracked": p.tracked,
+        out.append({"id": p.id, "name": p.name, "owner": p.owner, "cover": p.cover, "project": p.project, "tracked": p.tracked,
                     "refreshed_at": p.refreshed_at, "counts": counts})
     return out
 
@@ -192,7 +180,6 @@ def tracks(session, playlist_id=None):
     query = select(PlaylistTrack).order_by(PlaylistTrack.playlist_id, PlaylistTrack.position)
     rows = session.scalars(query).all()
     matches = {m.spotify_id: m for m in session.scalars(select(Match)).all()}
-    marks = {m.spotify_id for m in session.scalars(select(Mark)).all()}
     in_lists = {}
     for t in rows:
         in_lists.setdefault(t.spotify_id, []).append(t.playlist_id)
@@ -213,19 +200,10 @@ def tracks(session, playlist_id=None):
                 "artist": m.matched_artist, "note": m.note},
             "download": None if not m or not m.download_song_key else {
                 "song_key": m.download_song_key, "status": m.download_status},
-            "downloaded": t.spotify_id in marks,
             "playlists": [playlists[i].name if i in playlists else i for i in lists],
             "projects": sorted({playlists[i].project for i in lists if i in playlists and playlists[i].project}),
         })
     return out
-
-
-def set_mark(session, spotify_id, downloaded):
-    row = session.get(Mark, spotify_id)
-    if downloaded and row is None:
-        session.add(Mark(spotify_id=spotify_id))
-    elif not downloaded and row is not None:
-        session.delete(row)
 
 
 def playlists_for_path(session, path):

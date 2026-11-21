@@ -1,4 +1,4 @@
-"""Match Spotify tracks against local files (ported from check_playlists.py).
+"""Match Spotify tracks against local files.
 
 Statuses: 'have' (in the library), 'maybe' (check: other version, similar title or
 same title by another artist), 'missing'.
@@ -8,6 +8,7 @@ import re
 import unicodedata
 from pathlib import Path
 
+from .names import guess_from_filename
 from .tags import read_tags
 
 # Suffixes that describe the same recording for DJ purposes.
@@ -27,22 +28,13 @@ def normalize(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def parse_filename(stem):
-    """Guess artist/title from names like '01 - Artist - Title' or 'Artist - Title'."""
-    stem = re.sub(r"^\s*\d{1,3}\s*[-.\s_]\s*", "", stem)
-    parts = [p.strip() for p in re.split(r"\s+-\s+", stem) if p.strip()]
-    if len(parts) >= 2:
-        return {"artist": parts[0], "title": parts[-1]}
-    return {"title": stem.strip()}
-
-
 def local_entry(path, relative_path, artist=None, title=None):
     """A local file in the shape the matcher expects. Tags are read when not given."""
     if artist is None or title is None:
         tags = read_tags(path) if Path(path).suffix.lower() == ".mp3" else {}
     else:
         tags = {"artist": artist, "title": title}
-    from_name = parse_filename(Path(path).stem)
+    from_name = guess_from_filename(Path(path).stem)
     return {
         "path": str(path), "relative_path": relative_path,
         "title": tags.get("title") or from_name.get("title", ""),
@@ -76,9 +68,20 @@ def artist_tokens(text):
     return {w for w in text.split() if (len(w) > 1 or w.isdigit()) and w not in ARTIST_STOPWORDS}
 
 
+class Index(dict):
+    """Title core -> local tracks, plus which tracks share an artist word (to skip most of the library
+    when looking for similar titles)."""
+
+    def __init__(self):
+        super().__init__()
+        self.by_artist = {}
+        self.no_artist = []
+
+
 def build_index(library):
-    index = {}
-    for track in library:
+    index = Index()
+    for position, track in enumerate(library):
+        track["_pos"] = position
         keys = set()
         for title in (track["title"], track["filename_title"]):
             core, descriptor = split_title(title)
@@ -88,21 +91,37 @@ def build_index(library):
         track["_cores"] = keys
         track["_artists"] = artist_tokens(track["artist"]) | artist_tokens(track["filename_artist"])
         track["_haystack"] = normalize(track["relative_path"])
+        for word in track["_artists"]:
+            index.by_artist.setdefault(word, []).append(track)
+        if not track["_artists"]:
+            index.no_artist.append(track)
         for key in keys:
             index.setdefault(key, []).append(track)
     return index
 
 
-def match_track(spotify_track, library, index):
+def _similar_candidates(wanted_artists, index):
+    """Local tracks that could pass `artists_agree`, in library order: those sharing an artist word, and
+    those with no artist info (checked against the path)."""
+    found = {id(t): t for word in wanted_artists for t in index.by_artist.get(word, [])}
+    found.update({id(t): t for t in index.no_artist})
+    return sorted(found.values(), key=lambda t: t["_pos"])
+
+
+def match_track(spotify_track, index):
     core, descriptor = split_title(spotify_track["title"])
     version = distinct_version(descriptor)
-    wanted_artists = artist_tokens(", ".join(spotify_track["artists"]))
+    each_artist = [artist_tokens(a) for a in spotify_track["artists"]]
+    wanted_artists = set().union(*each_artist) if each_artist else set()
 
     def artists_agree(local):
         if not local["_artists"]:
             # No artist info locally: accept if an artist name appears anywhere in the path.
             return any(normalize(a) in local["_haystack"] for a in spotify_track["artists"])
-        return bool(wanted_artists & local["_artists"])
+        # A whole artist name must be there ("Pet Shop Boys" is not "Beastie Boys"), or the local artist
+        # must be made of the playlist's artists ("Soft Cell & Marc Almond" for a track by both).
+        return any(tokens and tokens <= local["_artists"] for tokens in each_artist) \
+            or local["_artists"] <= wanted_artists
 
     best, best_score, best_note = None, 0.0, ""
     for local in index.get(core, []):
@@ -119,14 +138,17 @@ def match_track(spotify_track, library, index):
                 best_note = "Same title, different artist and version"
 
     if best_score < 1.0 and core and len(core) >= 3:
-        for local in library:
+        for local in _similar_candidates(wanted_artists, index):
             for local_core in local["_cores"]:
                 if local_core == core:
                     continue
                 if not artists_agree(local):
                     continue
-                ratio = difflib.SequenceMatcher(None, core, local_core).ratio()
                 contained = min(len(core), len(local_core)) >= 8 and (core in local_core or local_core in core)
+                matcher = difflib.SequenceMatcher(None, core, local_core)
+                if not contained and matcher.quick_ratio() < 0.85:   # an upper bound: it cannot reach 0.8 after the penalty
+                    continue
+                ratio = matcher.ratio()
                 score = max(ratio, 0.86 if contained else 0) - 0.05
                 if score > best_score and score >= 0.8:
                     best, best_score, best_note = local, score, "Similar title"

@@ -1,14 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type ApplyResult, type Batch, type Step } from '../api'
-import { basename, plural } from './ui'
+import { BatchContext } from './batchContext'
+import { basename, plural } from './format'
 
 // Every file change goes through this dialog: preview -> Apply -> result (with Undo).
-
-// `applied` counts applied batches, so pages can drop selections whose paths just changed.
-type Ctx = { preview: (make: () => Promise<Batch>) => Promise<void>; applied: number }
-const BatchContext = createContext<Ctx>({ preview: async () => {}, applied: 0 })
-export const useBatch = () => useContext(BatchContext)
 
 const relative = (root: string, path: string) => (path.startsWith(root + '/') ? path.slice(root.length + 1) : path)
 const parent = (path: string) => path.split('/').slice(0, -1).join('/')
@@ -51,6 +47,9 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const plan = useCallback(
+    (kind: Batch['kind'], payload: object) => preview(() => api.post<Batch>('/batches/preview', { kind, payload })), [preview])
+
   const close = async () => {
     if (batch && !result) await api.post(`/batches/${batch.id}/discard`).catch(() => {})
     setBatch(null)
@@ -80,17 +79,39 @@ export function BatchProvider({ children }: { children: ReactNode }) {
     await preview(() => api.post<Batch>(`/batches/${result.id}/undo`))
   }
 
+  const open = Boolean(batch || (error && !busy))
+  const dialog = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const before = document.activeElement as HTMLElement | null
+    dialog.current?.querySelector<HTMLElement>('button.primary, footer button')?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { close(); return }
+      if (e.key !== 'Tab' || !dialog.current) return
+      // Keep Tab inside the dialog: it gates every file change.
+      const items = [...dialog.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select')]
+      if (!items.length) return
+      const first = items[0], last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+      else if (!dialog.current.contains(document.activeElement)) { e.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('keydown', onKey); before?.focus?.() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when the dialog opens or closes
+  }, [open])
+
   const runnable = batch ? batch.plan.steps.filter(s => s.action !== 'skip') : []
   const skipped = batch ? batch.plan.steps.filter(s => s.action === 'skip') : []
 
   return (
-    <BatchContext.Provider value={{ preview, applied }}>
+    <BatchContext.Provider value={{ preview, plan, applied }}>
       {children}
       {(batch || (error && !busy)) && (
-        <div className="overlay" onClick={e => e.target === e.currentTarget && close()}>
-          <div className="dialog" role="dialog" aria-modal="true">
+        <div className="overlay">
+          <div className="dialog" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="batch-title">
             <header>
-              <h2 style={{ margin: 0 }}>{result ? 'Done' : batch ? 'Check before applying' : 'Cannot plan this change'}</h2>
+              <h2 id="batch-title" style={{ margin: 0 }}>{result ? 'Done' : batch ? 'Check before applying' : 'Cannot plan this change'}</h2>
               <span className="spacer" />
               <button className="ghost" onClick={close} aria-label="Close">✕</button>
             </header>
@@ -117,7 +138,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
                     <div className="group" key={title}>
                       <h4>{title} ({steps.length})</h4>
                       <ul>{steps.map(s => (
-                        <li key={s.source} title={s.source}>
+                        <li key={`${s.source}>${s.dest}`} title={s.source}>
                           {basename(s.source)}
                           {basename(s.dest) !== basename(s.source) && (
                             <div className="renamed" title={s.dest}>→ renamed to <b>{basename(s.dest)}</b></div>
@@ -134,7 +155,7 @@ export function BatchProvider({ children }: { children: ReactNode }) {
                   {skipped.length > 0 && (
                     <div className="group">
                       <h4 className="muted">Skipped ({skipped.length})</h4>
-                      <ul>{skipped.map(s => <li key={s.source} className="muted">{basename(s.source)}: {s.note}</li>)}</ul>
+                      <ul>{skipped.map(s => <li key={`${s.source}>${s.dest}`} className="muted">{basename(s.source)}: {s.note}</li>)}</ul>
                     </div>
                   )}
                 </>

@@ -1,7 +1,7 @@
 """Rekordbox export logs: parsing, following dj-hub's file history, and the review."""
 from app.core import rekordbox as rb
 from app.db import session_scope
-from app.services import library, rekordbox
+from app.services import library
 
 from .conftest import fake_audio
 

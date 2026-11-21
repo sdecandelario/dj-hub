@@ -32,7 +32,6 @@ class File(Base):
     bpm: Mapped[str] = mapped_column(String, default="")
     present: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     first_seen: Mapped[dt.datetime] = mapped_column(default=now)
-    last_seen: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 class Job(Base):
@@ -47,7 +46,7 @@ class Job(Base):
     message: Mapped[str] = mapped_column(Text, default="")
     log: Mapped[str] = mapped_column(Text, default="")
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
-    legacy_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)   # process running it (CLI or server)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     started_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
@@ -64,7 +63,7 @@ class Measurement(Base):
     mtime_ns: Mapped[str | None] = mapped_column(String, nullable=True)
     measured_at: Mapped[dt.datetime] = mapped_column(default=now)
     full: Mapped[bool] = mapped_column(Boolean, default=False)       # includes the downloads quality checks
-    origin: Mapped[str] = mapped_column(String, default="app")       # app | reused | legacy-run | legacy-cache
+    origin: Mapped[str] = mapped_column(String, default="app")       # app | reused
     status: Mapped[str] = mapped_column(String, default="")
     error: Mapped[str] = mapped_column(Text, default="")
     integrated_lufs: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -72,8 +71,6 @@ class Measurement(Base):
     loudness_range_lu: Mapped[float | None] = mapped_column(Float, nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     codec: Mapped[str] = mapped_column(String, default="")
-    sample_rate_hz: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    channels: Mapped[int | None] = mapped_column(Integer, nullable=True)
     extra: Mapped[dict] = mapped_column(JSON, default=dict)          # quality checks, tags from ffprobe, versions
 
 
@@ -81,14 +78,13 @@ class Batch(Base):
     """A planned or applied set of file changes. Applied batches can be undone."""
     __tablename__ = "batches"
     id: Mapped[int] = mapped_column(primary_key=True)
-    kind: Mapped[str] = mapped_column(String)                        # apply | remove | intake | undo
+    kind: Mapped[str] = mapped_column(String)                        # apply | remove | intake | undo | tags | rename
     status: Mapped[str] = mapped_column(String, default="preview")   # preview|applied|partial|undone|discarded|failed
     label: Mapped[str] = mapped_column(String, default="")
     request: Mapped[dict] = mapped_column(JSON, default=dict)
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
     undoes_id: Mapped[int | None] = mapped_column(ForeignKey("batches.id"), nullable=True)
-    legacy_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
     created_at: Mapped[dt.datetime] = mapped_column(default=now)
     applied_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
 
@@ -131,8 +127,6 @@ class Playlist(Base):
     name: Mapped[str] = mapped_column(String, default="")
     owner: Mapped[str] = mapped_column(String, default="")
     cover: Mapped[str | None] = mapped_column(String, nullable=True)
-    source: Mapped[str] = mapped_column(String, default="")          # api | embed
-    possibly_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
     project: Mapped[str] = mapped_column(String, default="")         # DJ project this playlist defines
     position: Mapped[int] = mapped_column(Integer, default=0)
     tracked: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -162,17 +156,33 @@ class Match(Base):
     note: Mapped[str] = mapped_column(String, default="")
     download_song_key: Mapped[str | None] = mapped_column(String, nullable=True)   # a waiting download
     download_status: Mapped[str] = mapped_column(String, default="")              # have | maybe
-    computed_at: Mapped[dt.datetime] = mapped_column(default=now)
-
-
-class Mark(Base):
-    """'Downloaded' tick on a Spotify track (replaces the old browser storage)."""
-    __tablename__ = "marks"
-    spotify_id: Mapped[str] = mapped_column(String, primary_key=True)
-    marked_at: Mapped[dt.datetime] = mapped_column(default=now)
 
 
 class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String, primary_key=True)
     value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON, nullable=True)
+
+
+class Candidate(Base):
+    """A song suggested by discovery. Status new | wanted | dismissed | in_library (a wanted song that reached a genre folder); dismissed never come back."""
+    __tablename__ = "candidates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String, unique=True, index=True)   # normalized "artist|title"
+    genre: Mapped[str] = mapped_column(String, default="", index=True)  # folder it was found for
+    artist: Mapped[str] = mapped_column(String)
+    title: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="new", index=True)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    because: Mapped[list] = mapped_column(JSON, default=list)           # seed artists that point to it
+    you_own: Mapped[int] = mapped_column(Integer, default=0)            # tracks by this artist already owned
+    check: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # a similar track you may own
+    created_at: Mapped[dt.datetime] = mapped_column(default=now)
+
+
+class LastfmCache(Base):
+    """A Last.fm answer kept for a day, so asking again for the same artist does not call Last.fm."""
+    __tablename__ = "lastfm_cache"
+    key: Mapped[str] = mapped_column(String, primary_key=True)         # method and parameters, without the API key
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    fetched_at: Mapped[dt.datetime] = mapped_column(default=now, index=True)

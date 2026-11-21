@@ -3,7 +3,7 @@ import type { Measurement } from './api'
 // One verdict per track: fix (replace or find another version), check (listen or set the gain), ok.
 // Thresholds follow the downloads review (transcode gap, decode errors) so both pages agree.
 export type Level = 'fix' | 'check' | 'ok'
-export type Finding = { level: Level | 'info'; text: string; action: string }
+type Finding = { level: Level | 'info'; text: string; action: string }
 export type Verdict = {
   level: Level
   headline: string        // the main reason, short
@@ -18,7 +18,7 @@ export type Context = {
   libraryAir: number | null    // median top-end level of the view
 }
 
-export const PEAK_CEILING = -1      // dBTP: headroom target when raising gain
+const PEAK_CEILING = -1      // dBTP: headroom target when raising gain
 const TRANSCODE_GAP_DB = 85
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -98,7 +98,7 @@ export function judge(row: Measurement, ctx: Context): Verdict {
   const top = f[0]
   const level: Level = top && (top.level === 'fix' || top.level === 'check') ? top.level : 'ok'
   if (!top || top.level === 'info') {
-    return { level, headline: top ? 'Fine' : 'Fine', action: trim !== null && Math.abs(trim) >= 0.5
+    return { level, headline: 'Fine', action: trim !== null && Math.abs(trim) >= 0.5
       ? `Trim ${db(trim)} dB to match the library.` : 'Nothing to do.', findings: f, trim }
   }
   return { level, headline: top.text, action: top.action, findings: f, trim }

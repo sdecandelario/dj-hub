@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type AnalysisOverview, type Measurement } from '../api'
 import { LoudnessHistogram, LoudnessScatter } from '../components/charts'
-import { AnalyzeButton } from '../components/jobs'
-import { Badge, Card, ErrorNote, num, signed, StatusBadge, when } from '../components/ui'
+import { AnalyzeButton } from '../components/AnalyzeButton'
+import { Badge, Card, Empty, ErrorNote, StatusBadge } from '../components/ui'
+import { clickableRow, num, signed, when } from '../components/format'
 import { contextFor, isValid, judge, median, order, type Level, type Verdict } from '../verdict'
 
 type Row = Measurement & { delta: number | null; verdict: Verdict }
@@ -30,14 +31,15 @@ export default function Analysis() {
     enabled: view !== 'current',
   })
 
+  const loadingRun = view !== 'current' && runTracks.isLoading
   const references = data?.references ?? []
   const reference = references.find(r => String(r.id) === refId) ?? references[0]
   const ref = reference?.median_lufs ?? null
   const source = view === 'current' ? data?.current ?? [] : (runTracks.data ?? []).map(r => ({ ...r, run_id: view }))
-  const rows: Row[] = useMemo(() => {
+  const rows: Row[] = (() => {
     const ctx = contextFor(source.filter(r => !r.missing), ref)
     return source.map(r => ({ ...r, delta: isValid(r) && ref !== null ? (r.integrated_lufs as number) - ref : null, verdict: judge(r, ctx) }))
-  }, [source, ref])
+  })()
   const active = rows.filter(r => !r.missing)
   const count = (level: Level) => active.filter(r => r.verdict.level === level).length
   const q = search.toLowerCase()
@@ -51,7 +53,7 @@ export default function Analysis() {
     })
   const points = shown.filter(r => isValid(r) && !r.missing).map(r => ({
     lufs: r.integrated_lufs as number, peak: r.true_peak_dbtp as number, label: r.filename, flag: r.verdict.level !== 'ok' }))
-  const folders = useMemo(() => {
+  const folders = (() => {
     const groups = new Map<string, { fix: number; check: number; ok: number }>()
     for (const r of active) {
       const dir = r.path.slice(0, r.path.lastIndexOf('/'))
@@ -61,7 +63,7 @@ export default function Analysis() {
     }
     return [...groups].map(([dir, g]) => ({ dir, ...g, total: g.fix + g.check + g.ok }))
       .filter(g => g.fix + g.check > 0).sort((a, b) => (b.fix * 2 + b.check) / b.total - (a.fix * 2 + a.check) / a.total).slice(0, 8)
-  }, [active])
+  })()
   const header = (key: keyof Row | 'verdict', label: string, numeric = true) => (
     <th className={`sortable${numeric ? ' num' : ''}`} onClick={() => setSort({ key, dir: sort.key === key ? (-sort.dir as 1 | -1) : key === 'verdict' ? -1 : 1 })}>
       {label}{sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}
@@ -75,7 +77,8 @@ export default function Analysis() {
           <p className="muted">LUFS, true peak and loudness range for each file. Every run is kept as history. Audio files are only read. Start an analysis from the <Link to="/library">Library</Link>.</p>
         </div>
       </div>
-      <ErrorNote error={error} />
+      <ErrorNote error={error || runTracks.error} />
+      {loadingRun && <Empty>Loading this run…</Empty>}
       {data && !data.runs.length && (
         <div className="panel"><p className="muted">No runs yet. Select songs or a folder in the <Link to="/library">Library</Link> and click Analyze.</p></div>
       )}
@@ -171,8 +174,8 @@ export default function Analysis() {
           <thead><tr><th>Run</th><th>Scope</th><th className="num">Files</th><th className="num">Median</th><th>Status</th><th>Input</th></tr></thead>
           <tbody>
             {data?.runs.map(r => (
-              <tr key={r.id} className="clickable" onClick={() => setView(r.id)}>
-                <td>{r.label}{r.legacy && <> <Badge>imported</Badge></>}</td>
+              <tr key={r.id} {...clickableRow(() => setView(r.id))}>
+                <td>{r.label}</td>
                 <td>{r.scope}</td>
                 <td className="num">{r.files}</td>
                 <td className="num">{num(r.median_lufs)}</td>

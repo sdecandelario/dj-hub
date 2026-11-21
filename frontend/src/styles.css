@@ -98,14 +98,27 @@ button, .button { font: inherit; border: 1px solid var(--border); background: va
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+/* Decision buttons: green = accept, red = reject. `.on` marks the current choice. */
+button.ok { color: var(--ok); }
 button.danger { color: var(--danger); }
+button.ok:hover:not(:disabled) { border-color: var(--ok); background: var(--ok-soft); }
+button.danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
+button.ok.on { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 600; }
+button.danger.on { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); font-weight: 600; }
+table.fixed { table-layout: fixed; }
+table.fixed td .badge { white-space: normal; }
+td.actions { white-space: nowrap; }
+td.actions .row { flex-wrap: nowrap; }
 button.small { padding: 3px 8px; font-size: 12px; }
 button.ghost { border-color: transparent; background: transparent; }
 button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 input, select, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 10px; max-width: 100%; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
-input.search { min-width: 240px; }
+input.search { min-width: 240px; padding-right: 30px; }
+.search-wrap { position: relative; display: inline-flex; align-items: center; }
+.search-wrap .clear { position: absolute; right: 4px; padding: 0 8px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); }
+.search-wrap .clear:hover { color: var(--text); }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; }
@@ -122,6 +135,11 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--bor
 th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); position: sticky; top: 0;
   z-index: 1; white-space: nowrap; }
 th.sortable { cursor: pointer; user-select: none; }
+/* A long list under a ListToolbar: the toolbar and the table header stay at the top of the window.
+   `clip` (not hidden/auto) keeps the rounded corners without making the panel a scroll container. */
+.list-toolbar { position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 10px 0; margin-top: -10px; }
+.panel.list-table { overflow: clip; }
+.list-table th { top: var(--toolbar-h, 0); z-index: 2; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--panel-2); }
 tr.selected td { background: var(--accent-soft); }
@@ -156,6 +174,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 /* Job bar */
 .jobbar { position: fixed; bottom: calc(var(--bottombar-h, 0px) + 16px); right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20;
   width: 340px; }
+.job-songs { max-height: 220px; overflow: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.job-songs small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .job { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
   box-shadow: 0 4px 16px rgb(0 0 0 / 15%); }
 .progress { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; margin-top: 6px; }
@@ -234,25 +254,17 @@ pre.log { background: var(--panel-2); padding: 10px; border-radius: 8px; font-si
   .jobbar { left: 16px; width: auto; }
 }
 
-.picker { position: relative; }
-.picker-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 240px;
-  max-width: 340px; text-align: left; }
-.picker-toggle span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.picker-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: 320px;
-  max-height: 70vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); padding: 6px; }
-.picker-group { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
-.picker-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 8px;
-  font-size: 12px; color: var(--muted); font-weight: 600; }
-.picker-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
-.picker-item:hover { background: var(--panel-2); }
-.picker-item.strong { font-weight: 600; }
-.picker-item input { margin: 0; }
-.picker-foot { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; text-align: right; }
-@media (max-width: 600px) { .picker-toggle { min-width: 0; } .picker-menu { width: min(320px, calc(100vw - 32px)); } }
-
 .group .renamed { color: var(--muted, #8b95a5); font-size: 0.9em; }
 .group .renamed b { color: var(--text, inherit); font-weight: 600; }
 
 .inline-edit { width: 100%; min-width: 120px; background: transparent; border: 1px solid transparent; padding: 4px 6px; }
 .inline-edit:hover, .inline-edit:focus { border-color: var(--border, #2a3342); background: var(--bg, transparent); }
+
+.toasts { position: fixed; top: 16px; right: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.toasts .callout { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+:focus-visible { outline: 2px solid var(--accent, #4c8dff); outline-offset: 2px; }
+.offline-note { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 60; margin: 0; }
+
+.picker { min-width: 180px; }
+.picker summary { cursor: pointer; }
+.picker-menu { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }

@@ -1,6 +1,6 @@
 // Typed access to the DJ Hub API (/api). Shapes mirror backend/app/api/*.py.
 
-export class ApiError extends Error {
+class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
     super(message)
@@ -24,7 +24,11 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     }
     throw new ApiError(response.status, message)
   }
-  return response.json() as Promise<T>
+  try {
+    return (await response.json()) as T
+  } catch {
+    throw new ApiError(response.status, `Unexpected response from ${method} /api${url} (is the server up to date?)`)
+  }
 }
 
 export const api = {
@@ -41,14 +45,13 @@ export const audioUrl = (fileId: number) => `/api/files/${fileId}/audio`
 
 export type Job = {
   id: number
-  type: 'analyze' | 'review_downloads' | 'spotify_refresh' | 'library_scan' | 'match_playlists'
+  type: 'analyze' | 'review_downloads' | 'spotify_refresh' | 'library_scan' | 'match_playlists' | 'discover' | 'soulseek_download'
   params: Record<string, unknown>
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'
   done: number
   total: number
   message: string
   summary: Record<string, unknown>
-  legacy_id: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null
@@ -61,14 +64,13 @@ export type Step = { action: 'copy' | 'move' | 'skip'; source: string; dest: str
 
 export type Batch = {
   id: number
-  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'legacy'
+  kind: 'apply' | 'remove' | 'intake' | 'undo' | 'tags' | 'retag' | 'rename'
   status: 'preview' | 'running' | 'applied' | 'partial' | 'undone' | 'discarded' | 'failed'
   label: string
   created_at: string
   applied_at: string | null
   error: string
   undoes_id: number | null
-  legacy_id: string | null
   root: string
   can_undo: boolean
   plan: { kind: string; steps: Step[]; problems: string[]; notes: string[] }
@@ -78,7 +80,7 @@ export type Batch = {
 
 export type ApplyResult = { id: number; status: string; error: string; done: number; kind: string; warnings?: string[] }
 
-export type Loudness = {
+type Loudness = {
   path: string
   status: string
   integrated_lufs: number | null
@@ -123,8 +125,6 @@ export type Measurement = {
   loudness_range_lu: number | null
   duration_seconds: number | null
   codec: string
-  sample_rate_hz: number | null
-  channels: number | null
   corrupt_frames?: number | null
   bitrate_kbps?: number | null
   hf_gap_17k_db?: number | null
@@ -152,7 +152,7 @@ export type Tree = {
   sessions: string[]
 }
 
-export type Run = {
+type Run = {
   id: number
   label: string
   scope: 'file' | 'folder' | 'selection' | 'test'
@@ -160,7 +160,6 @@ export type Run = {
   status: string
   config: { input: string; [key: string]: unknown }
   created_at: string
-  legacy: boolean
   files: number
   median_lufs: number | null
 }
@@ -182,7 +181,6 @@ export type Version = {
   loudness_range_lu: number | null
   duration_seconds: number | null
   codec: string
-  sample_rate_hz: number | null
   bitrate_kbps: number | null
   corrupt_frames: number
   tag_artist: string
@@ -258,12 +256,10 @@ export type PlaylistInfo = {
   name: string
   owner: string
   cover: string | null
-  source: string
-  possibly_truncated: boolean
   project: string
   tracked: boolean
   refreshed_at: string | null
-  counts: { have: number; maybe: number; missing: number; downloaded: number; waiting: number; total: number }
+  counts: { have: number; maybe: number; missing: number; waiting: number; total: number }
 }
 
 export type PlaylistTrack = {
@@ -275,9 +271,23 @@ export type PlaylistTrack = {
   status: 'have' | 'maybe' | 'missing'
   match: { path: string; relative_path: string; title: string; artist: string; note: string } | null
   download: { song_key: string; status: string } | null
-  downloaded: boolean
   playlists: string[]
   projects: string[]
+}
+
+export type Candidate = {
+  id: number
+  genre: string
+  artist: string
+  title: string
+  status: 'new' | 'wanted' | 'dismissed' | 'in_library'
+  score: number
+  /** Artists in the genre folder that point to this one. */
+  because: string[]
+  /** Tracks by this artist (under any spelling) already in the library. */
+  you_own: number
+  check: { artist: string; title: string; relative_path: string; note: string } | null
+  in_playlists: { playlist: string; project: string }[]
 }
 
 export type Settings = {
@@ -286,10 +296,10 @@ export type Settings = {
   db: string
   sources: string[]
   sources_locked: boolean
+  soulseek: { min_bitrate: number; candidates: number }
   settle_seconds: number
   workers: number
   missing_tools: string[]
-  legacy_imported: Record<string, number> | null
 }
 
 export type SpotifyStatus = { keys: boolean; logged_in: boolean; redirect_uri: string }
@@ -302,7 +312,6 @@ export type Summary = {
   missing: number
   check: number
   waiting_downloads: number
-  marked_downloaded: number
   review_songs: number
   review_pending: number
   review_decided: number

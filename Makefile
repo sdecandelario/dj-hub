@@ -3,7 +3,7 @@ SHELL := /bin/bash
 HOST := 127.0.0.1
 PORT := 8000
 
-.PHONY: setup dev start build test import-legacy migration
+.PHONY: setup dev start build test lint migration
 
 setup:
 	uv sync --project backend
@@ -29,8 +29,10 @@ test:
 	uv run --directory backend pytest -q
 	npm --prefix frontend run build
 
-import-legacy:
-	uv run --directory backend djhub import-legacy
+lint:
+	uv run --directory backend ruff check .
+	npm --prefix frontend run lint
+	npm --prefix frontend run knip
 
 # After changing backend/app/models.py: make migration m="what changed"
 migration:

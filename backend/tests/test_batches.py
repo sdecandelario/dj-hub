@@ -1,12 +1,11 @@
 """File changes: the library rules, dry runs, apply, undo, and refusing stale previews."""
-import json
 from pathlib import Path
 
 import pytest
 
 from app.db import session_scope
 from app.models import Batch, FileOp
-from app.services import legacy, library
+from app.services import library
 
 from .conftest import fake_audio
 
@@ -71,15 +70,16 @@ def test_remove_goes_to_trash_and_protects_the_only_genre_copy(env):
     assert (env.root / "Sessions" / "Party" / "Front 242 - Headhunter.mp3").exists()
 
 
-def test_stale_preview_is_refused(env):
+def test_apply_fails_before_touching_anything_when_a_file_vanished(env):
     song = fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
     batch = preview("apply", {"items": [{"source": "00 Inbox/Yazoo - Situation.mp3",
                                          "to": "Genres/Synth-Pop & New Wave", "action": "move"}]})
     song.unlink()
-    with pytest.raises(library.BatchError, match="changed since the preview"):
+    with pytest.raises(library.BatchError, match="missing"):
         library.apply(session_scope, batch)
     with session_scope() as s:
-        assert s.get(Batch, batch).status == "discarded"
+        assert s.get(Batch, batch).status == "failed"
+        assert s.query(FileOp).filter_by(batch_id=batch).count() == 0
 
 
 def test_intake_moves_keep_to_inbox_and_others_to_rejected(env):
@@ -132,22 +132,6 @@ def test_intake_refuses_files_outside_downloads_and_changed_files(env):
     assert any("changed since the review" in x for x in p.problems)
 
 
-def test_legacy_djlib_log_import_and_undo(env):
-    moved = fake_audio(env.root / "Genres" / "EBM & Industrial" / "Nitzer Ebb - Join in the Chant.mp3")
-    log = [{"action": "move", "source": "Tracks/Nitzer Ebb - Join in the Chant.mp3",
-            "dest": "Genres/EBM & Industrial/Nitzer Ebb - Join in the Chant.mp3", "batch": "2026-11-08_11-21-37"}]
-    (env.root / ".djlib-log.jsonl").write_text("\n".join(json.dumps(e) for e in log), encoding="utf-8")
-    with session_scope() as s:
-        assert legacy.import_djlib_log(s, env.root / ".djlib-log.jsonl") == 1
-        assert legacy.import_djlib_log(s, env.root / ".djlib-log.jsonl") == 0   # safe to run twice
-        batch = s.query(Batch).filter_by(legacy_id="2026-11-08_11-21-37").one()
-        op = s.query(FileOp).filter_by(batch_id=batch.id).one()
-        assert op.source == str(env.root / "Tracks" / moved.name)
-        batch_id = batch.id
-    library.apply(session_scope, preview("undo", {"batch_id": batch_id}))
-    assert (env.root / "Tracks" / moved.name).exists() and not moved.exists()
-
-
 def test_intake_writes_tags_fills_album_and_undo_restores(env):
     from app.core.tags import read_tags
     from .conftest import real_audio
@@ -197,6 +181,34 @@ def test_fix_tags_from_filename_and_genre_folder_then_undo(env):
     assert read_tags(genre).get("artist") is None and read_tags(genre).get("genre") is None
 
 
+def test_retag_fixes_every_copy_then_undo(env):
+    from app.core.tags import read_tags
+
+    from .conftest import real_audio
+
+    genre = real_audio(env.root / "Genres" / "Synth-Pop & New Wave" / "Yazzoo - Situation.mp3",
+                       title="Situation", artist="Yazzoo")
+    session_copy = env.root / "Sessions" / "Party" / genre.name
+    session_copy.parent.mkdir(parents=True, exist_ok=True)
+    session_copy.write_bytes(genre.read_bytes())
+    inbox = real_audio(env.root / "00 Inbox" / "A - B.mp3", title="B", artist="A", frequency=500)
+
+    item = {"source": "Genres/Synth-Pop & New Wave/Yazzoo - Situation.mp3", "artist": "Yazoo"}
+    p = plan("retag", {"items": [item, {"source": "00 Inbox/A - B.mp3", "artist": "C"},
+                                 {"source": "Genres/Synth-Pop & New Wave/Yazzoo - Situation.mp3", "title": ""}]})
+    assert len(p.problems) == 2 and len(p.runnable()) == 2
+
+    batch = preview("retag", {"items": [item]})
+    assert library.apply(session_scope, batch)["status"] == "applied"
+    for path in (genre, session_copy):
+        assert read_tags(path) == {"artist": "Yazoo", "title": "Situation"}
+    assert genre.name == "Yazzoo - Situation.mp3" and read_tags(inbox)["artist"] == "A"
+    assert plan("retag", {"items": [item]}).runnable() == []
+
+    library.apply(session_scope, preview("undo", {"batch_id": batch}))
+    assert read_tags(genre)["artist"] == "Yazzoo" and read_tags(session_copy)["artist"] == "Yazzoo"
+
+
 def test_rename_inbox_file_changes_name_and_tags_then_undo(env):
     from app.core.tags import read_tags
 
@@ -224,11 +236,11 @@ def test_move_from_inbox_applies_name_edits(env):
     from .conftest import real_audio
 
     real_audio(env.root / "00 Inbox" / "VVV - Invierno nuclear.mp3", title="Invierno nuclear", artist="VVV")
-    item = {"source": "00 Inbox/VVV - Invierno nuclear.mp3", "to": "Genres/Post-Punk & Dark Wave",
+    item = {"source": "00 Inbox/VVV - Invierno nuclear.mp3", "to": "Genres/Post-Punk",
             "action": "move", "artist": "VVV [Trippin'you]", "title": "Invierno nuclear"}
     batch = preview("apply", {"items": [item]})
     library.apply(session_scope, batch)
-    new = env.root / "Genres" / "Post-Punk & Dark Wave" / "VVV [Trippin'you] - Invierno nuclear.mp3"
+    new = env.root / "Genres" / "Post-Punk" / "VVV [Trippin'you] - Invierno nuclear.mp3"
     assert new.exists() and read_tags(new)["artist"] == "VVV [Trippin'you]"
     library.apply(session_scope, preview("undo", {"batch_id": batch}))
     old = env.root / "00 Inbox" / "VVV - Invierno nuclear.mp3"
@@ -252,17 +264,13 @@ def test_move_from_inbox_notes_a_song_already_in_a_genre_folder(env):
     assert any("already in the library" in n and "Genres/EBM & Industrial/DAF - Kebab.mp3" in n for n in p.notes)
 
 
-def test_inbox_listing_flags_songs_already_in_the_library(env):
-    from fastapi.testclient import TestClient
-
-    from app.main import app
-
+def test_inbox_listing_flags_songs_already_in_the_library(env, client):
     fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3", content=b"a")
     fake_audio(env.root / "00 Inbox" / "DAF - Kebab.mp3", content=b"b")
     fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3", content=b"c")
     with session_scope() as s:
         library.sync_library(s)
-    rows = {r["name"]: r for r in TestClient(app).get("/api/library/files", params={"kind": "inbox"}).json()}
+    rows = {r["name"]: r for r in client.get("/api/library/files", params={"kind": "inbox"}).json()}
     assert rows["DAF - Kebab.mp3"]["in_library"][0]["rel_path"] == "Genres/EBM & Industrial/DAF - Kebab.mp3"
     assert rows["Yazoo - Situation.mp3"]["in_library"] == []
 
@@ -316,15 +324,10 @@ def test_replace_works_for_a_similar_spelling_too(env):
     assert p.runnable()[0].source == str(old)
 
 
-def test_a_file_removed_outside_the_app_is_not_listed_any_more(env):
-    from fastapi.testclient import TestClient
-
-    from app.main import app
-
+def test_a_file_removed_outside_the_app_is_not_listed_any_more(env, client):
     gone = fake_audio(env.root / "00 Inbox" / "A - B.mp3")
     with session_scope() as s:
         library.sync_library(s)
-    client = TestClient(app)
     assert len(client.get("/api/library/files", params={"kind": "inbox"}).json()) == 1
     gone.unlink()
     assert client.get("/api/library/files", params={"kind": "inbox"}).json() == []
@@ -339,3 +342,240 @@ def test_discard_moves_an_inbox_file_to_rejected_and_undo_brings_it_back(env):
     assert kept.exists() and not song.exists()
     library.apply(session_scope, preview("undo", {"batch_id": batch}))
     assert song.exists() and not kept.exists()
+
+
+def test_intake_refuses_two_rejects_with_the_same_name(env):
+    a = fake_audio(env.downloads / "a" / "Boy Harsher - Pain.mp3", b"a")
+    b = fake_audio(env.downloads / "b" / "Boy Harsher - Pain.mp3", b"b")
+    p = plan("intake", {"picks": [{"song": "Boy Harsher - Pain", "keep": None, "reject": [str(a), str(b)]}]})
+    assert not p.steps and any("already in" in x for x in p.problems)
+    p = plan("intake", {"picks": [{"song": "Boy Harsher - Pain", "keep": None, "reject": [str(a), str(a)]}]})
+    assert not p.steps and p.problems
+
+
+def test_remove_lists_each_file_once_and_keeps_one_genre_copy(env):
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3")
+    fake_audio(env.root / "Sessions" / "Party" / "DAF - Kebab.mp3")
+    p = plan("remove", {"paths": ["Sessions/Party/DAF - Kebab.mp3", "Sessions/Party"]})
+    assert len(p.steps) == 1
+    # Two genre copies of one song: both listed, only one may go.
+    one = env.root / "Genres" / "EBM & Industrial" / "Front 242 - Headhunter.mp3"
+    two = env.root / "Genres" / "Synth-Pop & New Wave" / "Front 242 - Headhunter.mp3"
+    fake_audio(one, b"h")
+    two.write_bytes(one.read_bytes())
+    p = plan("remove", {"paths": [str(one.relative_to(env.root)), str(two.relative_to(env.root))]})
+    assert len(p.steps) == 1 and "only genre copy" in p.problems[0]
+
+
+def test_execute_checks_everything_before_moving_anything(env):
+    from app.core import library as core
+
+    first = fake_audio(env.root / "00 Inbox" / "A - One.mp3", b"1")
+    second = fake_audio(env.root / "00 Inbox" / "B - Two.mp3", b"2")
+    taken = fake_audio(env.root / "Genres" / "EBM & Industrial" / "B - Two.mp3", b"3")
+    plan_ = core.Plan("apply", steps=[
+        core.Step("move", str(first), str(env.root / "Genres" / "EBM & Industrial" / first.name)),
+        core.Step("move", str(second), str(taken))])
+    with pytest.raises(FileExistsError):
+        core.execute(env.root, plan_)
+    assert first.exists() and second.exists()   # the first step did not run either
+
+
+def test_stuck_running_batch_is_recovered(env):
+    with session_scope() as s:
+        s.add(Batch(kind="apply", status="running", label="x", request={}, plan={"steps": []}))
+    with session_scope() as s:
+        assert library.recover_batches(s) == 1
+        assert s.query(Batch).one().status == "failed"
+
+
+def test_undo_with_problems_is_partial(env):
+    song = fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    other = fake_audio(env.root / "00 Inbox" / "B - Two.mp3")
+    items = [{"source": f"00 Inbox/{n}", "to": "Genres/EBM & Industrial", "action": "move"}
+             for n in (song.name, other.name)]
+    batch = preview("apply", {"items": items})
+    library.apply(session_scope, batch)
+    (env.root / "Genres" / "EBM & Industrial" / song.name).unlink()
+    undo = preview("undo", {"batch_id": batch})
+    result = library.apply(session_scope, undo)
+    assert result["status"] == "partial"
+    with session_scope() as s:
+        assert s.get(Batch, batch).status == "applied"   # not marked undone
+
+
+def test_rename_edge_cases(env):
+    from .conftest import real_audio
+    from app.core.tags import read_tags
+
+    real_audio(env.root / "00 Inbox" / "Some Band - Song.mp3", title="Song", artist="Some Band")
+    src = "00 Inbox/Some Band - Song.mp3"
+    p = plan("rename", {"items": [{"source": src, "artist": "Some Band", "title": "..."}]})
+    assert not p.problems   # a title that cleans to nothing keeps the file name instead of crashing
+    # No artist key: the artist tag is left alone.
+    batch = preview("rename", {"items": [{"source": src, "title": "New Song"}]})
+    library.apply(session_scope, batch)
+    new = next((env.root / "00 Inbox").glob("*New Song*"))
+    assert read_tags(new) == {"artist": "Some Band", "title": "New Song"}
+    # A case-only rename works.
+    batch = preview("rename", {"items": [{"source": "00 Inbox/" + new.name, "artist": "SOME BAND", "title": "New Song"}]})
+    library.apply(session_scope, batch)
+    assert read_tags(next((env.root / "00 Inbox").glob("*New Song*")))["artist"] == "SOME BAND"
+
+
+def test_write_tags_keeps_id3v24(env):
+    from mutagen.id3 import ID3, TIT2
+    from app.core.tags import write_tags
+    from .conftest import real_audio
+
+    path = real_audio(env.tmp / "x.mp3", title="x", artist="y")
+    tag = ID3(path)
+    tag.add(TIT2(encoding=3, text=["x"]))
+    tag.save(path, v2_version=4)
+    write_tags(path, {"title": "z"})
+    assert ID3(path).version[:2] == (2, 4)
+
+
+def test_scan_sync_clears_hash_when_file_changes(env):
+    from app.models import File
+    from sqlalchemy import select
+
+    song = fake_audio(env.root / "00 Inbox" / "A - One.mp3")
+    with session_scope() as s:
+        library.sync_library(s)
+        row = s.scalar(select(File).where(File.path == str(song)))
+        row.sha256 = "abc"
+    song.write_bytes(song.read_bytes()[:-1] + b"y")   # same size, different mtime
+    import os
+    os.utime(song, ns=(1, 1))
+    with session_scope() as s:
+        library.sync_library(s)
+        assert s.scalar(select(File).where(File.path == str(song))).sha256 is None
+
+
+def test_intent_is_logged_before_a_move_and_dropped_when_it_fails(env, monkeypatch):
+    from app.core import library as core
+
+    a = fake_audio(env.root / "00 Inbox" / "A - One.mp3", b"1")
+    b = fake_audio(env.root / "00 Inbox" / "B - Two.mp3", b"2")
+    items = [{"source": f"00 Inbox/{p.name}", "to": "Genres/EBM & Industrial", "action": "move"} for p in (a, b)]
+    batch = preview("apply", {"items": items})
+    real_move = core.shutil.move
+    seen = []
+
+    def flaky(source, dest):
+        with session_scope() as s:   # the intent is already in the database when the file moves
+            seen.append(s.query(FileOp).filter_by(batch_id=batch).count())
+        if "B - Two" in str(source):
+            raise OSError("disk went away")
+        return real_move(source, dest)
+    monkeypatch.setattr(core.shutil, "move", flaky)
+    result = library.apply(session_scope, batch)
+    assert seen == [1, 2] and result["status"] == "partial"
+    with session_scope() as s:
+        ops = s.query(FileOp).filter_by(batch_id=batch).all()
+        assert [Path(o.source).name for o in ops] == ["A - One.mp3"]   # the failed move left no row
+    assert b.exists() and not a.exists()
+
+
+def test_recovery_keeps_moves_that_happened_and_drops_those_that_did_not(env):
+    done = fake_audio(env.root / "Genres" / "EBM & Industrial" / "A - One.mp3")
+    with session_scope() as s:
+        batch = Batch(kind="apply", status="running", label="x", request={}, plan={"steps": []})
+        s.add(batch)
+        s.flush()
+        s.add(FileOp(batch_id=batch.id, seq=1, action="move", source=str(env.root / "00 Inbox" / "A - One.mp3"),
+                     dest=str(done)))
+        s.add(FileOp(batch_id=batch.id, seq=2, action="move", source=str(env.root / "00 Inbox" / "B - Two.mp3"),
+                     dest=str(env.root / "Genres" / "EBM & Industrial" / "B - Two.mp3")))
+    with session_scope() as s:
+        assert library.recover_batches(s) == 1
+    with session_scope() as s:
+        assert s.query(Batch).one().status == "partial"
+        assert s.query(FileOp).count() == 1
+
+
+def test_intake_notes_the_same_audio_even_when_the_library_copy_was_retagged(env):
+    import shutil
+
+    from app.core.tags import write_tags
+    from .conftest import real_audio
+
+    download = real_audio(env.downloads / "Boy Harsher - Pain.mp3", frequency=300)
+    library_copy = env.root / "Genres" / "EBM & Industrial" / "Boy Harsher - Pain.mp3"
+    library_copy.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(download, library_copy)
+    write_tags(library_copy, {"artist": "Boy Harsher", "title": "Pain", "album": "Careful"})   # new tag bytes
+    other = real_audio(env.root / "Genres" / "EBM & Industrial" / "Other - Pain.mp3", frequency=900)
+    write_tags(other, {"artist": "Boy Harsher", "title": "Pain"})
+    p = plan("intake", {"picks": [{"song": "Boy Harsher - Pain", "keep": str(download), "reject": []}]})
+    assert any("same audio is already in the library" in n and library_copy.name in n and "Other" not in n.split(":", 1)[1].split("possible")[0]
+               for n in p.notes), p.notes
+    assert any("possible upgrade" in n and other.name in n for n in p.notes)
+
+
+def test_spotify_login_states_expire_and_are_bounded(client, monkeypatch):
+    from app.api import playlists as api
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "id")
+    monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "secret")
+    api._login_states.clear()
+    api._login_states["old"] = -10_000.0
+    assert client.get("/api/spotify/callback?state=old&code=x").status_code == 404   # expired
+    for _ in range(api.MAX_LOGIN_STATES + 5):
+        assert client.get("/api/spotify/login", follow_redirects=False).status_code in (302, 307)
+    assert len(api._login_states) == api.MAX_LOGIN_STATES
+    api._login_states.clear()
+
+
+def test_apply_plan_edge_cases(env):
+    one = fake_audio(env.root / "00 Inbox" / "A - One.mp3", b"1")
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "A - One.mp3", b"2")   # another song, same file name
+    two = fake_audio(env.root / "00 Inbox" / "B - Two.mp3", b"3")
+    move = lambda src, to, **extra: {"source": src, "to": to, "action": "move", **extra}   # noqa: E731
+    p = plan("apply", {"items": [move("00 Inbox/B - Two.mp3", "Genres/EBM & Industrial"),
+                                 move("00 Inbox/B - Two.mp3", "Genres/Synth-Pop & New Wave")]})
+    assert len(p.steps) == 1 and "moved twice" in p.problems[0]
+    p = plan("apply", {"items": [move(f"00 Inbox/{one.name}", "Genres/EBM & Industrial")]})
+    assert not p.steps and "a different file named" in p.problems[0]
+    p = plan("apply", {"items": [{"source": "nope.mp3", "to": "Genres/X", "action": "move"},
+                                 {"source": two.name, "to": "Genres/X", "action": "fly"},
+                                 {"source": "00 Inbox/B - Two.mp3", "to": "Elsewhere/X", "action": "move"}]})
+    assert len(p.problems) == 3 and not p.steps
+
+
+def test_new_genre_and_sessions_in_one_plan(env):
+    fake_audio(env.root / "00 Inbox" / "Soft Cell - Tainted Love.mp3")
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3", b"y")
+    items = [{"source": "00 Inbox/Soft Cell - Tainted Love.mp3", "to": "Genres/Brand New", "action": "move"},
+             {"source": "00 Inbox/Soft Cell - Tainted Love.mp3", "to": "Sessions/Party A", "action": "copy"},
+             {"source": "00 Inbox/Soft Cell - Tainted Love.mp3", "to": "Sessions/Party B", "action": "copy"},
+             # no genre yet: a session copy is refused
+             {"source": "00 Inbox/Yazoo - Situation.mp3", "to": "Sessions/Party A", "action": "copy"}]
+    p = plan("apply", {"items": items})
+    assert [s.action for s in p.steps] == ["move", "copy", "copy"]
+    assert "New genre folder: Brand New" in p.notes
+    assert len(p.problems) == 1 and "genre before" in p.problems[0]
+
+
+def test_new_genre_name_cannot_differ_only_by_case(env):
+    (env.root / "Genres" / "Post-Punk").mkdir(parents=True, exist_ok=True)
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
+    p = plan("apply", {"items": [{"source": "00 Inbox/Yazoo - Situation.mp3", "to": "Genres/post-punk",
+                                  "action": "move"}]})
+    assert not p.steps and "looks like" in p.problems[0]
+
+
+def test_a_replacement_can_get_session_copies_but_a_discarded_file_cannot(env):
+    fake_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Kebab.mp3", content=b"a")
+    fake_audio(env.root / "00 Inbox" / "DAF - Kebab.mp3", content=b"b")
+    fake_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3", content=b"c")
+    p = plan("apply", {"items": [
+        {"source": "00 Inbox/DAF - Kebab.mp3", "to": "Genres/EBM & Industrial", "action": "move", "replace": True},
+        {"source": "00 Inbox/DAF - Kebab.mp3", "to": "Sessions/Party", "action": "copy"},
+        {"source": "00 Inbox/Yazoo - Situation.mp3", "to": "", "action": "move", "discard": True},
+        {"source": "00 Inbox/Yazoo - Situation.mp3", "to": "Sessions/Party", "action": "copy"},
+    ]})
+    assert [(s.label, s.dest.split("/DJ Tracks/")[-1]) for s in p.runnable()][1:] == [
+        ("", "Genres/EBM & Industrial/DAF - Kebab.mp3"), ("", "Sessions/Party/DAF - Kebab.mp3"),
+        ("", "00 Rejected/Yazoo - Situation/Yazoo - Situation.mp3")]
+    assert len(p.problems) == 1 and "give the song a genre" in p.problems[0]

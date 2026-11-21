@@ -1,15 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type Settings, type Summary } from '../api'
-import { isRunning, startJob, useActiveJobs } from '../components/jobs'
-import { Card, ErrorNote, JOB_LABELS, StatusBadge, when } from '../components/ui'
+import { isRunning, startJob, useActiveJobs } from '../components/jobsContext'
+import { Card, ErrorNote, StatusBadge } from '../components/ui'
+import { JOB_LABELS, when } from '../components/format'
 
 export default function Home() {
   const { data, error } = useQuery({ queryKey: ['summary'], queryFn: () => api.get<Summary>('/summary') })
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') })
   const jobs = useActiveJobs()
   const navigate = useNavigate()
-  const empty = data && !data.library_files && !settings.data?.legacy_imported
+  const empty = data && !data.library_files
 
   return (
     <>
@@ -36,8 +37,7 @@ export default function Home() {
       ) : null}
       {empty && (
         <div className="callout info">
-          The app is empty. Import the history from the old projects in <Link to="/settings">Settings</Link>, or
-          run <b>Scan library</b>.
+          The app is empty. Run <b>Scan library</b>, or add playlists in <Link to="/settings">Settings</Link>.
         </div>
       )}
       {data && (

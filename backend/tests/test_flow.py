@@ -109,11 +109,11 @@ def test_playlist_matching_and_waiting_downloads(env):
 def test_api_smoke(client, env):
     song = real_audio(env.root / "00 Inbox" / "Yazoo - Situation.mp3")
     client.post("/api/jobs", json={"type": "library_scan"})
-    for _ in range(50):
-        if not runner.busy():
-            break
-        import time
-        time.sleep(0.1)
+    import time
+    deadline = time.monotonic() + 30
+    while runner._contexts and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not runner._contexts, "the library scan did not finish"
     files = client.get("/api/library/files", params={"kind": "inbox"}).json()
     assert [f["name"] for f in files] == [song.name]
     detail = client.get(f"/api/files/{files[0]['id']}").json()
@@ -132,7 +132,7 @@ def test_api_smoke(client, env):
 
 def test_analysis_of_several_folders_is_one_run(env):
     ebm = real_audio(env.root / "Genres" / "EBM & Industrial" / "DAF - Liebe.mp3")
-    wave = real_audio(env.root / "Genres" / "Post-Punk & Dark Wave" / "Boy Harsher - Pain.mp3", frequency=300)
+    wave = real_audio(env.root / "Genres" / "Post-Punk" / "Boy Harsher - Pain.mp3", frequency=300)
     real_audio(env.root / "Genres" / "Other" / "Skip - Me.mp3")
     folders = [str(ebm.parent), str(wave.parent), str(ebm.parent)]
     job = runner.run_sync("analyze", {"paths": folders}, echo=None)
@@ -233,3 +233,27 @@ def test_pending_downloads_are_counted_without_measuring(client, env):
     real_audio(env.downloads / "Yazoo - Situation.mp3", frequency=500)
     after = client.get("/api/downloads/pending").json()
     assert (after["files"], after["songs"], after["new"]) == (4, 3, 1)
+
+
+def test_analysis_and_downloads_review_share_their_measurements(env):
+    import shutil
+
+    from app.models import Job, Measurement
+
+    song = real_audio(env.root / "Genres" / "EBM & Industrial" / "Boy Harsher - Pain.mp3", frequency=330)
+    runner.run_sync("analyze", {"paths": [str(song)]}, echo=None)
+    with session_scope() as s:
+        extra = s.query(Measurement).one().extra
+        assert {"audio_md5", "hf_gap_19k_db", "tone_air_db", "loud_lufs"} <= set(extra)   # one full measurement
+    copy = env.downloads / "Boy Harsher - Pain.mp3"
+    shutil.copy2(song, copy)
+    job = runner.run_sync("review_downloads", {}, echo=None)
+    with session_scope() as s:
+        assert s.get(Job, job).summary["measured"] == 0   # the review reused the analysis run's work
+    # and the other way round: a file measured by the review is not measured again by an analysis run
+    other = real_audio(env.downloads / "Cold Cave - Love.mp3", frequency=700)
+    runner.run_sync("review_downloads", {}, echo=None)
+    runner.run_sync("analyze", {"paths": [str(other)]}, echo=None)
+    with session_scope() as s:
+        newest = s.query(Job).filter_by(type="analyze").order_by(Job.id.desc()).first()
+        assert newest.summary.get("reused", 0) == 1 or s.query(Measurement).filter_by(job_id=newest.id).one().origin == "reused"

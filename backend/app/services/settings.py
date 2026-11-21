@@ -32,3 +32,16 @@ def sources(session):
 
 def sources_locked():
     return bool(os.environ.get("DJ_SOURCES"))
+
+
+SOULSEEK_DEFAULTS = {"min_bitrate": 320, "candidates": 10}   # only MP3 files are ever searched
+
+
+def soulseek(session):
+    """Soulseek search rules: minimum MP3 bitrate (kbps) and how many versions of a song to download."""
+    return {k: get(session, f"soulseek_{k}", v) for k, v in SOULSEEK_DEFAULTS.items()}
+
+
+def soulseek_folder(session):
+    """Where Soulseek downloads land: inside the first download folder, so the review finds them."""
+    return sources(session)[0] / "Soulseek"

@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, type Batch, type RekordboxReview, type RekordboxTrack } from '../api'
-import { useBatch } from '../components/batch'
-import { Badge, Card, downloadCsv, Empty, ErrorNote, plural } from '../components/ui'
+import { useBatch } from '../components/batchContext'
+import { attempt } from '../components/errorBus'
+import { downloadCsv, plural } from '../components/format'
+import { Badge, Card, Empty, ErrorNote } from '../components/ui'
 
 type Filter = 'todo' | 'missing' | 'moved' | 'check' | 'ok' | 'all'
 
@@ -120,7 +122,7 @@ export default function Rekordbox() {
                               )}
                               <div className="row" style={{ marginTop: 4 }}>
                                 <button className="small" onClick={() => copy(now, t.old_path)}>{copied === t.old_path ? 'Copied' : 'Copy path'}</button>
-                                {fileId && <button className="small" onClick={() => api.post(`/files/${fileId}/reveal`)}>Show in Finder</button>}
+                                {fileId && <button className="small" onClick={() => attempt(api.post(`/files/${fileId}/reveal`))}>Show in Finder</button>}
                               </div>
                             </>
                           ) : <div><small className="muted">No trace in the library. Download it again, or restore it from the Trash.</small></div>}

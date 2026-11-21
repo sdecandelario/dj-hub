@@ -12,8 +12,14 @@ LOSSLESS = {'flac', 'alac', 'wav', 'pcm_s16le', 'pcm_s24le', 'pcm_s16be', 'pcm_s
 LOUDNESS_FIELDS = ('integrated_lufs', 'true_peak_dbtp', 'loudness_range_lu')
 
 
+TOOL_TIMEOUT_SECONDS = 30 * 60   # a corrupt file must not hang a job forever
+
+
 def run(args):
-    return subprocess.run(args, capture_output=True, text=True, errors='replace')
+    try:
+        return subprocess.run(args, capture_output=True, text=True, errors='replace', timeout=TOOL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(args, 1, '', f'{args[0]} timed out')
 
 
 def missing_tools():
@@ -21,10 +27,10 @@ def missing_tools():
 
 
 def tool_versions():
-    return {
-        'ffmpeg_version': run(['ffmpeg', '-version']).stdout.splitlines()[0],
-        'ffprobe_version': run(['ffprobe', '-version']).stdout.splitlines()[0],
-    }
+    def first_line(tool):
+        lines = run([tool, '-version']).stdout.splitlines()
+        return lines[0] if lines else ''
+    return {'ffmpeg_version': first_line('ffmpeg'), 'ffprobe_version': first_line('ffprobe')}
 
 
 # --- Hashes ---------------------------------------------------------------------
@@ -80,7 +86,7 @@ def measure(path):
     """Integrated loudness, true peak and loudness range of the first audio stream."""
     row = {'filename': os.path.basename(path), 'path': str(path), 'status': 'ERROR', 'error': '',
            'integrated_lufs': None, 'true_peak_dbtp': None, 'loudness_range_lu': None,
-           'duration_seconds': None, 'codec': '', 'sample_rate_hz': None, 'channels': None}
+           'duration_seconds': None, 'codec': ''}
     try:
         probe_proc = run(['ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_streams', '-show_format',
                           '-of', 'json', str(path)])
@@ -91,8 +97,6 @@ def measure(path):
         row.update({
             'duration_seconds': _number(stream.get('duration', info.get('format', {}).get('duration'))),
             'codec': stream.get('codec_name', ''),
-            'sample_rate_hz': int(stream['sample_rate']) if str(stream.get('sample_rate', '')).isdigit() else None,
-            'channels': stream.get('channels'),
         })
         proc = run(['ffmpeg', '-nostdin', '-hide_banner', '-i', str(path), '-map', '0:a:0', '-vn', '-sn', '-dn',
                     '-af', 'loudnorm=print_format=json', '-f', 'null', '-'])
@@ -149,6 +153,18 @@ def probe(path):
     }
 
 
+def rms_levels(stderr):
+    """The 'RMS level dB' values ffmpeg's astats filter printed, in order (-inf when not a number)."""
+    levels = []
+    for line in stderr.splitlines():
+        if 'RMS level dB' in line:
+            try:
+                levels.append(float(line.rsplit(':', 1)[1]))
+            except ValueError:
+                levels.append(-math.inf)
+    return levels
+
+
 def high_frequency(path):
     """RMS level (dB) of the full signal minus the level above 17 kHz and above 19.5 kHz (mono mix).
     A large gap above 19.5 kHz on a lossy file suggests a transcode."""
@@ -158,13 +174,7 @@ def high_frequency(path):
              '[a][b2][c2]amerge=inputs=3,astats=measure_overall=none:measure_perchannel=RMS_level[out]')
     proc = run(['ffmpeg', '-nostdin', '-hide_banner', '-i', str(path), '-filter_complex', graph,
                 '-map', '[out]', '-f', 'null', '-'])
-    levels = []
-    for line in proc.stderr.splitlines():
-        if 'RMS level dB' in line:
-            try:
-                levels.append(float(line.rsplit(':', 1)[1]))
-            except ValueError:
-                levels.append(-math.inf)
+    levels = rms_levels(proc.stderr)
     if len(levels) != 3 or not math.isfinite(levels[0]):
         return {'hf_gap_17k_db': None, 'hf_gap_19k_db': None}
     gap = lambda v: round(levels[0] - v, 1) if math.isfinite(v) else 150.0
@@ -210,37 +220,24 @@ def tonal_balance(path):
              + f'amerge=inputs={len(TONE_BANDS) + 1},astats=measure_overall=none:measure_perchannel=RMS_level[out]')
     proc = run(['ffmpeg', '-nostdin', '-hide_banner', '-i', str(path), '-filter_complex', graph,
                 '-map', '[out]', '-f', 'null', '-'])
-    levels = []
-    for line in proc.stderr.splitlines():
-        if 'RMS level dB' in line:
-            try:
-                levels.append(float(line.rsplit(':', 1)[1]))
-            except ValueError:
-                levels.append(-math.inf)
+    levels = rms_levels(proc.stderr)
     if len(levels) != len(TONE_BANDS) + 1 or not math.isfinite(levels[0]):
         return {name: None for name, _ in TONE_BANDS}
     return {name: round(level - levels[0], 1) if math.isfinite(level) else -150.0
             for (name, _), level in zip(TONE_BANDS, levels[1:])}
 
 
-def quality(path, measured):
-    """Everything beyond loudness that the analysis keeps: file facts, decode errors, transcode
-    check, loud-section level and tonal balance. `measured` is the result of measure()."""
-    result = {'corrupt_frames': len([l for l in (measured.get('error') or '').splitlines() if l.strip()])}
-    result.update(probe(path))
-    result.update(high_frequency(path))
-    result.update(loud_sections(path))
-    result.update(tonal_balance(path))
-    return result
-
-
 def analyze(path):
-    """Loudness plus the quality checks used to pick the best download."""
+    """Everything the app measures about one file, in one place: loudness, file facts, decode errors,
+    the audio-only hash, the transcode check, and (for files that decoded) the loud-section level and tonal
+    balance. The analysis page and the downloads review both store this, so either can reuse the other's work."""
     row = measure(path)
-    result = {k: row.get(k) for k in LOUDNESS_FIELDS + ('status', 'error', 'duration_seconds', 'codec',
-                                                         'sample_rate_hz', 'channels')}
-    result['corrupt_frames'] = len([l for l in (row.get('error') or '').splitlines() if l.strip()])
+    result = {k: row.get(k) for k in LOUDNESS_FIELDS + ('status', 'error', 'duration_seconds', 'codec')}
+    result['corrupt_frames'] = len([line for line in (row.get('error') or '').splitlines() if line.strip()])
     result['audio_md5'] = audio_hash(path)
     result.update(probe(path))
     result.update(high_frequency(path))
+    if result['status'] == 'OK':
+        result.update(loud_sections(path))
+        result.update(tonal_balance(path))
     return result

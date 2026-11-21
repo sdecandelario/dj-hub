@@ -1,44 +1,36 @@
 """Loudness analysis: runs, the current library view, and starting a run."""
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends
 
 from ..config import get_config
-from ..jobs import runner
 from ..services import analysis
 from . import get_session
 
 router = APIRouter()
 
 
-class AnalyzeBody(BaseModel):
-    path: str | None = None
-    paths: list[str] = []
-    reuse: bool = True
-
-
 @router.get("/analysis")
-def overview(session=Depends(get_session)):
+def overview(session=Depends(get_session, scope="function")):
     return analysis.overview(session)
 
 
 @router.get("/analysis/runs/{job_id}")
-def run(job_id: int, session=Depends(get_session)):
+def run(job_id: int, session=Depends(get_session, scope="function")):
     return analysis.run_tracks(session, job_id)
 
 
-@router.post("/analysis")
-def start(body: AnalyzeBody):
-    raw = body.paths or ([body.path] if body.path else [])
+def analysis_params(paths, path=None, reuse=True):
+    """Validated job params for an analysis run. Raises ValueError with a message for the user."""
+    raw = [p for p in (paths or ([path] if path else [])) if isinstance(p, str) and p.strip()]
     if not raw:
-        raise HTTPException(400, "Choose at least one file or folder")
-    paths = []
+        raise ValueError("Choose at least one file or folder")
+    resolved = []
     for item in raw:
-        path = Path(item).expanduser()
-        if not path.is_absolute():
-            path = get_config().root / path
-        if not path.exists():
-            raise HTTPException(400, f"Not found: {path}")
-        paths.append(str(path))
-    return {"id": runner.submit("analyze", {"paths": paths, "reuse": body.reuse})}
+        found = Path(item.strip()).expanduser()
+        if not found.is_absolute():
+            found = get_config().root / found
+        if not found.exists():
+            raise ValueError(f"Not found: {found}")
+        resolved.append(str(found.resolve()))
+    return {"paths": resolved, "reuse": bool(reuse)}

@@ -4,15 +4,24 @@ import datetime as dt
 import time
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ..config import get_config
 from ..core import audio
 from ..core import downloads as dl
 from ..db import session_scope
 from ..jobs import handler
-from ..models import Decision, File, Review, now
+from ..models import Decision, File, Job, Review, now
 from . import analysis, library, playlists, settings
+
+
+
+
+def soulseek_finished(session):
+    """Resolved paths of the files our own Soulseek downloads have completed: no need to wait for them to settle."""
+    jobs = session.scalars(select(Job).where(Job.type == "soulseek_download").order_by(Job.id.desc()).limit(50)).all()
+    return {str(Path(f["local_path"]).resolve()) for job in jobs for f in (job.summary or {}).get("files", [])
+            if f.get("done") and f.get("local_path")}
 
 
 @handler("review_downloads")
@@ -24,30 +33,21 @@ def run_review(ctx):
     cfg = get_config()
     with session_scope() as s:
         sources = [Path(p).resolve() for p in settings.sources(s)]
-    files, skipped = dl.find_files(sources, time.time(), cfg.settle_seconds)
+    with session_scope() as s:
+        finished = soulseek_finished(s)
+    files, skipped = dl.find_files(sources, time.time(), cfg.settle_seconds, finished)
     versions = audio.tool_versions()
     items = []
+    for source, path in files:
+        stat = path.stat()
+        items.append({"path": str(path.resolve()), "name": path.name, "source": str(source),
+                      "size": stat.st_size, "mtime_ns": str(stat.st_mtime_ns)})
     with session_scope() as s:
-        for source, path in files:
-            stat = path.stat()
-            item = {"path": str(path.resolve()), "name": path.name, "source": str(source),
-                    "size": stat.st_size, "mtime_ns": str(stat.st_mtime_ns)}
-            item["sha256"] = analysis.cached_sha(s, path, stat)
-            items.append(item)
+        analysis.cached_shas(s, items)
     ctx.progress(0, len(items), f"{len(items)} download(s) found")
     measured = _measure(ctx, items, versions, cfg.workers)
     with session_scope() as s:
-        seen = set()
-        for item in items:
-            row = library.register_file(s, item["path"], "download")
-            row.area, row.present, row.last_seen = "download", True, now()
-            row.size, row.mtime_ns, row.sha256 = item["size"], item["mtime_ns"], item["sha256"]
-            row.artist, row.title = item.get("tag_artist") or "", item.get("tag_title") or ""
-            item["file_id"] = row.id
-            seen.add(item["path"])
-        for row in s.scalars(select(File).where(File.area == "download", File.present.is_(True))).all():
-            if row.path not in seen:
-                row.present = False
+        _store_downloads(s, items)
         tracks = library.scan(s)
         median, median_run = analysis.library_median(s)
     songs = dl.build_songs(items, dl.library_index(tracks))
@@ -60,6 +60,8 @@ def run_review(ctx):
     }
     with session_scope() as s:
         s.add(Review(job_id=ctx.job_id, payload=payload))
+        s.flush()
+        s.execute(delete(Review).where(Review.job_id != ctx.job_id))   # only the latest review is ever read
     with session_scope() as s:
         playlists.link_downloads(s)
     multi = sum(len(song["versions"]) > 1 for song in songs)
@@ -68,20 +70,34 @@ def run_review(ctx):
             "measured": measured, "skipped_recent": len(skipped)}
 
 
+def _store_downloads(session, items):
+    """Record the download files in the files table (and mark the ones no longer there as gone)."""
+    seen = set()
+    for item in items:
+        row = library.register_file(session, item["path"], "download")
+        row.area, row.present = "download", True
+        row.size, row.mtime_ns, row.sha256 = item["size"], item["mtime_ns"], item["sha256"]
+        row.artist, row.title = item.get("tag_artist") or "", item.get("tag_title") or ""
+        item["file_id"] = row.id
+        seen.add(item["path"])
+    for row in session.scalars(select(File).where(File.area == "download", File.present.is_(True))).all():
+        if row.path not in seen:
+            row.present = False
+
+
 def _measure(ctx, items, versions, workers):
     """Fill each item with its quality measurement: reused when the same bytes were measured
     before, otherwise measured now (read-only) and stored. Returns how many were measured now."""
-    todo = []
-    for item in items:
+    for item in items:   # hashing reads the whole file, so it happens outside any database session
         ctx.check()
         if not item["sha256"]:
             item["sha256"] = audio.sha256_file(item["path"])
-        with session_scope() as s:
-            old = analysis.reusable(s, item["sha256"], True, versions["ffmpeg_version"])
-            if old is None:
-                old = analysis.reusable(s, item["sha256"], True, None)
-            if old:
-                item.update(_quality(analysis.measurement_row(old)))
+    with session_scope() as s:
+        old = analysis.reusable_many(s, [i["sha256"] for i in items], versions["ffmpeg_version"], analysis.REVIEW_NEEDS)
+        todo = []
+        for item in items:
+            if item["sha256"] in old:
+                item.update(_quality(analysis.measurement_row(old[item["sha256"]])))
             else:
                 todo.append(item)
     measured = 0

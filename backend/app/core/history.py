@@ -1,4 +1,4 @@
-"""Loudness history across analysis runs (ported from DJ_Loudness_Analyzer/dashboard.py).
+"""Loudness history across analysis runs.
 
 A run is {"id", "scope": file|selection|folder, "complete", "config": {"input", "inputs"?}, "manifest": [paths],
 "tracks": [rows with path, sha256, status, integrated_lufs, ...]}, oldest first.

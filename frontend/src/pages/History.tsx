@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
 import { api, type Batch, type Job } from '../api'
-import { useBatch } from '../components/batch'
-import { Badge, ErrorNote, JOB_LABELS, StatusBadge, when } from '../components/ui'
+import { useBatch } from '../components/batchContext'
+import { ErrorNote, StatusBadge } from '../components/ui'
+import { clickableRow, JOB_LABELS, when } from '../components/format'
+import { attempt } from '../components/errorBus'
+
+const MAX_LIMIT = 500
 
 function BatchOps({ id }: { id: number }) {
   const { data } = useQuery({ queryKey: ['batches', id], queryFn: () => api.get<Batch>(`/batches/${id}`) })
@@ -35,8 +39,14 @@ export default function History() {
   const [tab, setTab] = useState<'batches' | 'jobs'>('batches')
   const [open, setOpen] = useState<number | null>(null)
   const batch = useBatch()
-  const batches = useQuery({ queryKey: ['batches'], queryFn: () => api.get<Batch[]>('/batches') })
-  const jobs = useQuery({ queryKey: ['jobs'], queryFn: () => api.get<Job[]>('/jobs'), refetchInterval: 5000 })
+  const [limit, setLimit] = useState(100)
+  const batches = useQuery({ queryKey: ['batches', 'list', limit], queryFn: () => api.get<Batch[]>(`/batches?limit=${limit}`) })
+  // Jobs refresh by themselves only while their tab is shown.
+  const jobs = useQuery({ queryKey: ['jobs', 'list', limit], queryFn: () => api.get<Job[]>(`/jobs?limit=${limit}`),
+    refetchInterval: tab === 'jobs' ? 5000 : false })
+  const more = (list?: unknown[]) => list && list.length >= limit && limit < MAX_LIMIT && (
+    <p><button onClick={() => setLimit(limit + 100)}>Show older</button></p>
+  )
 
   return (
     <>
@@ -58,9 +68,9 @@ export default function History() {
             <tbody>
               {batches.data?.map(b => (
                 <Fragment key={b.id}>
-                  <tr className="clickable" onClick={() => setOpen(open === b.id ? null : b.id)}>
+                  <tr {...clickableRow(() => setOpen(open === b.id ? null : b.id))}>
                     <td>{b.id}</td>
-                    <td>{b.label}{b.legacy_id && <> <Badge>dj-library skill</Badge></>}
+                    <td>{b.label}
                       {b.error && <><br /><small className="muted">{b.error}</small></>}</td>
                     <td><StatusBadge status={b.status} /></td>
                     <td><small>{when(b.applied_at ?? b.created_at)}</small></td>
@@ -77,6 +87,7 @@ export default function History() {
           </table>
         </div>
       )}
+      {tab === 'batches' && more(batches.data)}
       {tab === 'jobs' && (
         <div className="panel flush table-wrap">
           <table>
@@ -84,18 +95,18 @@ export default function History() {
             <tbody>
               {jobs.data?.map(j => (
                 <Fragment key={j.id}>
-                  <tr className="clickable" onClick={() => setOpen(open === j.id ? null : j.id)}>
+                  <tr {...clickableRow(() => setOpen(open === j.id ? null : j.id))}>
                     <td>{j.id}</td>
                     <td>{JOB_LABELS[j.type] ?? j.type}{(Array.isArray(j.params.paths) || typeof j.params.path === 'string') && <><br /><small className="mono">{Array.isArray(j.params.paths) ? j.params.paths.join('; ') : String(j.params.path)}</small></>}</td>
                     <td><StatusBadge status={j.status} /></td>
                     <td><small>{j.total ? `${j.done}/${j.total} · ` : ''}{j.message}</small></td>
                     <td><small>{when(j.started_at ?? j.created_at)}</small></td>
                     <td onClick={e => e.stopPropagation()}>
-                      {['interrupted', 'failed', 'cancelled'].includes(j.status) && !j.legacy_id && (
-                        <button className="small" onClick={() => api.post(`/jobs/${j.id}/resume`).then(() => jobs.refetch())}>Resume</button>
+                      {['interrupted', 'failed', 'cancelled'].includes(j.status) && (
+                        <button className="small" onClick={() => attempt(api.post(`/jobs/${j.id}/resume`).then(() => jobs.refetch()))}>Resume</button>
                       )}
                       {['running', 'queued'].includes(j.status) && (
-                        <button className="small" onClick={() => api.post(`/jobs/${j.id}/cancel`)}>Cancel</button>
+                        <button className="small" onClick={() => attempt(api.post(`/jobs/${j.id}/cancel`))}>Cancel</button>
                       )}
                     </td>
                   </tr>
@@ -106,6 +117,7 @@ export default function History() {
           </table>
         </div>
       )}
+      {tab === 'jobs' && more(jobs.data)}
     </>
   )
 }

@@ -1,8 +1,9 @@
 """Library browsing, file details, audio streaming and file batches."""
 import subprocess
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -26,7 +27,7 @@ def file_dict(row):
 
 
 @router.get("/library/tree")
-def tree(session=Depends(get_session)):
+def tree(session=Depends(get_session, scope="function")):
     """Folders with file counts, grouped by kind, plus the genre and session names."""
     rows = session.execute(select(File.kind, File.folder, func.count()).where(
         File.area == "library", File.present.is_(True)).group_by(File.kind, File.folder)).all()
@@ -41,7 +42,7 @@ def tree(session=Depends(get_session)):
 
 @router.get("/library/files")
 def files(kind: str | None = None, folder: str | None = None, q: str | None = None, area: str = "library",
-          session=Depends(get_session)):
+          session=Depends(get_session, scope="function")):
     query = select(File).where(File.area == area, File.present.is_(True))
     if kind:
         query = query.where(File.kind == kind)
@@ -59,10 +60,7 @@ def files(kind: str | None = None, folder: str | None = None, q: str | None = No
         rows = [r for r in rows if all(w in lib.normalize(f"{r.artist} {r.title} {r.rel_path or r.path}")
                                        for w in words)]
     # Latest loudness per file, for the table.
-    latest = {}
-    if rows:
-        for m in analysis.latest_by_path(session, [r.path for r in rows]):
-            latest[m["path"]] = m
+    latest = analysis.latest_for_files(session, rows)
     out = [file_dict(r) | {"loudness": latest.get(r.path)} for r in rows]
     if kind == "inbox" and area == "library":
         _mark_already_in_library(session, out, rows)
@@ -80,7 +78,7 @@ def _mark_already_in_library(session, out, inbox_rows):
             by_fp.setdefault(o.quick_fp, []).append(o)
         if o.title:
             by_name.setdefault(lib.match_key(o.artist, o.title), []).append(o)
-    loudness = {m["path"]: m for m in analysis.latest_by_path(session, [o.path for o in others])}
+    loudness = analysis.latest_for_files(session, others)
     for entry, row in zip(out, inbox_rows):
         hits = {o.path: (o, "file") for o in by_fp.get(row.quick_fp, [])} if row.quick_fp else {}
         if row.title:
@@ -98,16 +96,8 @@ def _mark_already_in_library(session, out, inbox_rows):
             for o, match in hits.values()]
 
 
-@router.get("/library/status")
-def status(session=Depends(get_session)):
-    tracks = library.scan(session)
-    report = lib.status(tracks)
-    report["dupes"] = lib.dupes(tracks)
-    return report
-
-
 @router.get("/files/{file_id}")
-def file_detail(file_id: int, session=Depends(get_session)):
+def file_detail(file_id: int, session=Depends(get_session, scope="function")):
     row = session.get(File, file_id)
     if row is None:
         raise HTTPException(404, "File not found")
@@ -128,7 +118,7 @@ def _allowed(path):
 
 
 @router.get("/files/{file_id}/audio")
-def audio_stream(file_id: int, session=Depends(get_session)):
+def audio_stream(file_id: int, session=Depends(get_session, scope="function")):
     row = session.get(File, file_id)
     if row is None or not Path(row.path).is_file() or not _allowed(row.path):
         raise HTTPException(404, "File not available")
@@ -136,7 +126,7 @@ def audio_stream(file_id: int, session=Depends(get_session)):
 
 
 @router.post("/files/{file_id}/reveal")
-def reveal(file_id: int, session=Depends(get_session)):
+def reveal(file_id: int, session=Depends(get_session, scope="function")):
     row = session.get(File, file_id)
     if row is None or not Path(row.path).exists() or not _allowed(row.path):
         raise HTTPException(404, "File not available")
@@ -148,17 +138,19 @@ def reveal(file_id: int, session=Depends(get_session)):
 
 
 class PreviewBody(BaseModel):
-    kind: str
+    kind: Literal["apply", "remove", "intake", "rename", "tags", "retag", "undo"]
     payload: dict
     label: str = ""
 
 
 @router.post("/batches/preview")
-def preview(body: PreviewBody, session=Depends(get_session)):
+def preview(body: PreviewBody, session=Depends(get_session, scope="function")):
     try:
         batch = library.preview(session, body.kind, body.payload, body.label)
     except library.BatchError as exc:
         raise HTTPException(400, str(exc))
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(400, f"Malformed {body.kind} request: {type(exc).__name__} {exc}")
     return library.batch_dict(session, batch)
 
 
@@ -177,13 +169,13 @@ def apply(batch_id: int):
 
 
 @router.post("/batches/{batch_id}/discard")
-def discard(batch_id: int, session=Depends(get_session)):
+def discard(batch_id: int, session=Depends(get_session, scope="function")):
     library.discard(session, batch_id)
     return {"ok": True}
 
 
 @router.post("/batches/{batch_id}/undo")
-def undo_preview(batch_id: int, session=Depends(get_session)):
+def undo_preview(batch_id: int, session=Depends(get_session, scope="function")):
     try:
         batch = library.preview(session, "undo", {"batch_id": batch_id})
     except library.BatchError as exc:
@@ -192,7 +184,7 @@ def undo_preview(batch_id: int, session=Depends(get_session)):
 
 
 @router.get("/batches")
-def batches(limit: int = 100, session=Depends(get_session)):
+def batches(limit: int = Query(100, ge=1, le=500), session=Depends(get_session, scope="function")):
     rows = session.scalars(select(Batch).where(Batch.status != "discarded").order_by(Batch.id.desc())
                            .limit(limit)).all()
     out = []
@@ -205,7 +197,7 @@ def batches(limit: int = 100, session=Depends(get_session)):
 
 
 @router.get("/batches/{batch_id}")
-def batch(batch_id: int, session=Depends(get_session)):
+def batch(batch_id: int, session=Depends(get_session, scope="function")):
     row = session.get(Batch, batch_id)
     if row is None:
         raise HTTPException(404, "Batch not found")

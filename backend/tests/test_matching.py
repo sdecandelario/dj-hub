@@ -1,7 +1,8 @@
 import unittest
 
 from app.core import matching as c
-from app.core.spotify import parse_playlist_id
+from app.core.names import guess_from_filename
+from app.integrations.spotify import parse_playlist_id
 
 
 def local(artist, title, path=None):
@@ -15,7 +16,7 @@ def spotify(artists, title):
 
 class MatchingTest(unittest.TestCase):
     def match(self, track, library):
-        return c.match_track(track, library, c.build_index(library))["status"]
+        return c.match_track(track, c.build_index(library))["status"]
 
     def test_exact_match(self):
         self.assertEqual(self.match(spotify(["Soft Cell"], "Tainted Love"), [local("Soft Cell", "Tainted Love")]), "have")
@@ -39,13 +40,25 @@ class MatchingTest(unittest.TestCase):
         lib = [local("The Rapture", "How Deep Is Your Love")]
         self.assertEqual(self.match(spotify(["The Outfield"], "Your Love"), lib), "missing")
 
+    def test_one_shared_word_is_not_the_same_artist(self):
+        lib = [local("Beastie Boys", "Domino")]
+        self.assertEqual(self.match(spotify(["Pet Shop Boys"], "Domino"), lib), "maybe")   # same title, other artist
+        self.assertEqual(self.match(spotify(["John Foxx"], "Domino"), [local("John Lennon", "Domino")]), "maybe")
+
+    def test_featured_and_joint_artists_still_agree(self):
+        self.assertEqual(self.match(spotify(["Soft Cell", "Marc Almond"], "Tainted Love"),
+                                    [local("Soft Cell", "Tainted Love")]), "have")
+        self.assertEqual(self.match(spotify(["Soft Cell"], "Tainted Love"),
+                                    [local("Soft Cell & Marc Almond", "Tainted Love")]), "have")
+        self.assertEqual(self.match(spotify(["The Cure"], "A Forest"), [local("Cure", "A Forest")]), "have")
+
     def test_missing(self):
         self.assertEqual(self.match(spotify(["a-ha"], "Take on Me"), [local("Devo", "Whip It")]), "missing")
 
     def test_filename_parsing(self):
-        self.assertEqual(c.parse_filename("60 - Technotronic - Pump Up The Jam"),
+        self.assertEqual(guess_from_filename("60 - Technotronic - Pump Up The Jam"),
                          {"artist": "Technotronic", "title": "Pump Up The Jam"})
-        self.assertEqual(c.parse_filename("07 Another World"), {"title": "Another World"})
+        self.assertEqual(guess_from_filename("07 Another World"), {"title": "Another World"})
 
     def test_playlist_id_parsing(self):
         pid = "37i9dQZF1DX4UtSsGT1Sbe"
@@ -56,3 +69,4 @@ class MatchingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -1,5 +1,5 @@
 import type { Measurement } from '../api'
-import { num, when } from './ui'
+import { num, when } from './format'
 
 const W = 600, H = 300, L = 50, R = 15, T = 15, B = 40
 

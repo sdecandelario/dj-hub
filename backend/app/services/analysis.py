@@ -13,11 +13,14 @@ from ..models import File, Job, Measurement
 from .library import register_file
 
 MEASURE_FIELDS = ("status", "error", "integrated_lufs", "true_peak_dbtp", "loudness_range_lu",
-                  "duration_seconds", "codec", "sample_rate_hz", "channels")
+                  "duration_seconds", "codec")
 QUALITY_FIELDS = ("corrupt_frames", "audio_md5", "tag_artist", "tag_title", "album", "year",
                   "bitrate_kbps", "has_art", "hf_gap_17k_db", "hf_gap_19k_db",
                   "loud_lufs", "momentary_max_lufs", "tone_low_db", "tone_mid_db", "tone_presence_db", "tone_air_db")
-DEEP_MARKER = "tone_air_db"  # measurements without it predate the loud-section and tone checks
+DEEP_MARKER = "tone_air_db"  # only stored when the loud-section and tone checks ran
+# What each page needs from a stored measurement before it can reuse it instead of measuring again.
+ANALYSIS_NEEDS = (DEEP_MARKER,)
+REVIEW_NEEDS = ("audio_md5", "hf_gap_19k_db", "corrupt_frames")
 
 
 def measurement_row(m):
@@ -45,18 +48,42 @@ def cached_sha(session, path, stat):
     return None
 
 
-def reusable(session, sha, full, ffmpeg_version, deep=False):
-    """A previous good measurement of the same bytes with the same ffmpeg. With deep=True, only one
-    that also has the loud-section and tonal-balance checks (older ones are measured again)."""
-    query = select(Measurement).where(Measurement.sha256 == sha, Measurement.status == "OK")
-    if full:
-        query = query.where(Measurement.full.is_(True))
-    for m in session.scalars(query.order_by(Measurement.id.desc())).all():
-        if deep and DEEP_MARKER not in (m.extra or {}):
-            continue
-        if (m.extra or {}).get("ffmpeg_version") in (None, ffmpeg_version):
-            return m
-    return None
+def cached_shas(session, items):
+    """Fill item["sha256"] from the stored hashes in one pass: only for files whose size and
+    modification time still match what was hashed. `items` need path, size and mtime_ns."""
+    stored = {}
+    paths = [i["path"] for i in items]
+    for start in range(0, len(paths), 500):
+        for row in session.scalars(select(File).where(File.path.in_(paths[start:start + 500]))).all():
+            stored[row.path] = row
+    for item in items:
+        row = stored.get(item["path"])
+        ok = row and row.sha256 and row.size == item["size"] and row.mtime_ns == str(item["mtime_ns"])
+        item["sha256"] = row.sha256 if ok else None
+
+
+def _usable(m, ffmpeg_version, need):
+    extra = m.extra or {}
+    return extra.get("ffmpeg_version") == ffmpeg_version and all(key in extra for key in need)
+
+
+def reusable_many(session, shas, ffmpeg_version, need=()):
+    """{sha: newest good measurement of those bytes} in few queries. The measurement must come from
+    this ffmpeg and hold every key in `need` (what the caller wants to show), so work
+    done by the analysis page and by the downloads review can be shared."""
+    found = {}
+    shas = sorted({s for s in shas if s})
+    for start in range(0, len(shas), 500):
+        query = select(Measurement).where(Measurement.sha256.in_(shas[start:start + 500]), Measurement.status == "OK")
+        for m in session.scalars(query.order_by(Measurement.id.desc())).all():
+            if m.sha256 not in found and _usable(m, ffmpeg_version, need):
+                found[m.sha256] = m
+    return found
+
+
+def reusable(session, sha, ffmpeg_version, need=()):
+    """A previous good measurement of the same bytes with the same ffmpeg that holds the `need` keys."""
+    return reusable_many(session, [sha], ffmpeg_version, need).get(sha)
 
 
 def collect_paths(sources):
@@ -133,12 +160,10 @@ def run_analysis(ctx):
         sha = sha or audio.sha256_file(path)
         if ctx.params.get("reuse", True):
             with session_scope() as s:
-                old = reusable(s, sha, False, versions["ffmpeg_version"], deep=True)
+                old = reusable(s, sha, versions["ffmpeg_version"], ANALYSIS_NEEDS)
                 if old:
                     return path, stat, sha, measurement_row(old), True
-        result = audio.measure(path)
-        if result["status"] == "OK":
-            result.update(audio.quality(path, result))
+        result = audio.analyze(path)
         after = path.stat()
         if (after.st_size, after.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
             result.update(status="ERROR", error="File changed during analysis")
@@ -194,19 +219,20 @@ def runs(session, with_tracks=True):
     """Analysis runs oldest first, in the shape core.history expects."""
     jobs = session.scalars(select(Job).where(Job.type == "analyze", Job.status.in_(
         ("done", "cancelled", "interrupted", "failed", "running"))).order_by(Job.created_at, Job.id)).all()
+    by_job = {}
+    if with_tracks and jobs:   # one query for every run, not one per run
+        for m in session.scalars(select(Measurement).where(Measurement.job_id.in_([j.id for j in jobs]))
+                                 .order_by(Measurement.path)).all():
+            by_job.setdefault(m.job_id, []).append(measurement_row(m))
     out = []
     for job in jobs:
         summary = job.summary or {}
-        tracks = []
-        if with_tracks:
-            tracks = [measurement_row(m) for m in session.scalars(
-                select(Measurement).where(Measurement.job_id == job.id).order_by(Measurement.path)).all()]
+        tracks = by_job.get(job.id, [])
         out.append({
-            "id": job.id, "label": job.legacy_id or job.created_at.strftime("%Y-%m-%d %H:%M"),
+            "id": job.id, "label": job.created_at.strftime("%Y-%m-%d %H:%M"),
             "scope": summary.get("scope", "file"), "complete": bool(summary.get("complete")),
             "status": job.status, "config": summary.get("config") or {"input": job.params.get("path", "")},
             "manifest": summary.get("manifest") or [], "tracks": tracks, "created_at": job.created_at,
-            "legacy": bool(job.legacy_id),
         })
     return out
 
@@ -252,14 +278,25 @@ def overview_references(session):
     return out
 
 
-def latest_by_path(session, paths):
-    """The newest measurement of each path (for library tables)."""
-    latest = {}
-    for start in range(0, len(paths), 500):
-        chunk = paths[start:start + 500]
-        for m in session.scalars(select(Measurement).where(Measurement.path.in_(chunk))
-                                 .order_by(Measurement.id)).all():
-            latest[m.path] = m
-    return [{"path": m.path, "status": m.status, "integrated_lufs": m.integrated_lufs,
-             "true_peak_dbtp": m.true_peak_dbtp, "loudness_range_lu": m.loudness_range_lu,
-             "measured_at": m.measured_at} for m in latest.values()]
+def latest_for_files(session, files):
+    """{file path: newest measurement} (for library tables): found by the file's path, or by its hash,
+    so a file that was moved or renamed after it was measured still shows its loudness."""
+    by_path, by_sha = {}, {}
+    for start in range(0, len(files), 500):
+        chunk = files[start:start + 500]
+        paths = [f.path for f in chunk]
+        shas = [f.sha256 for f in chunk if f.sha256]
+        for m in session.scalars(select(Measurement).where(
+                Measurement.path.in_(paths) | Measurement.sha256.in_(shas)).order_by(Measurement.id)).all():
+            by_path[m.path] = m
+            if m.sha256:
+                by_sha[m.sha256] = m
+    out = {}
+    for f in files:
+        found = [m for m in (by_path.get(f.path), by_sha.get(f.sha256) if f.sha256 else None) if m]
+        if found:
+            m = max(found, key=lambda x: x.id)
+            out[f.path] = {"path": f.path, "status": m.status, "integrated_lufs": m.integrated_lufs,
+                           "true_peak_dbtp": m.true_peak_dbtp, "loudness_range_lu": m.loudness_range_lu,
+                           "measured_at": m.measured_at}
+    return out

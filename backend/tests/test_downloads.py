@@ -1,8 +1,4 @@
-import json
-import re
-import tempfile
 import unittest
-from pathlib import Path
 
 from app.core import downloads as rd, names
 from app.core.audio import decoder_problems
@@ -232,3 +228,13 @@ class LibraryComparison(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_recent_files_are_skipped_unless_a_finished_download(tmp_path):
+    import time
+    from app.core import downloads as dl
+    fresh, finished = tmp_path / "a.mp3", tmp_path / "b.mp3"
+    fresh.write_bytes(b"x")
+    finished.write_bytes(b"x")
+    files, skipped = dl.find_files([tmp_path], time.time(), 120, finished={str(finished.resolve())})
+    assert [p.name for _, p in files] == ["b.mp3"] and [p.name for p in skipped] == ["a.mp3"]

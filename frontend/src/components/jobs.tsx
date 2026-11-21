@@ -1,7 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type Job } from '../api'
-import { JOB_LABELS, StatusBadge } from './ui'
+import { attempt } from './errorBus'
+import { JOB_LABELS } from './format'
+import { JobsContext, useActiveJobs } from './jobsContext'
+import { SoulseekSongs } from './SoulseekDownloads'
+import { StatusBadge } from './ui'
 
 // Which cached queries to refresh when a job of this type finishes.
 const REFRESH: Record<string, string[]> = {
@@ -10,14 +14,14 @@ const REFRESH: Record<string, string[]> = {
   spotify_refresh: ['playlists', 'tracks', 'summary', 'downloads'],
   library_scan: ['files', 'tree', 'summary', 'playlists', 'tracks', 'file'],
   match_playlists: ['playlists', 'tracks', 'summary', 'downloads', 'file'],
+  discover: ['candidates'],
+  soulseek_download: ['downloads', 'pending'],
 }
-
-const JobsContext = createContext<Job[]>([])
-export const useActiveJobs = () => useContext(JobsContext)
 
 /** Subscribes to /api/events and keeps the list of active jobs; refreshes data when jobs finish. */
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([])
+  const [offline, setOffline] = useState(false)
   const seen = useRef(new Map<number, string>())
   const client = useQueryClient()
 
@@ -45,6 +49,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       } else if (!source) {
         source = new EventSource('/api/events')
         source.addEventListener('jobs', onJobs)
+        source.onopen = () => setOffline(false)
+        source.onerror = () => setOffline(true)   // the browser keeps retrying by itself
         // Catch up on anything that finished while the tab was hidden.
         client.invalidateQueries()
       }
@@ -57,7 +63,12 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     }
   }, [client])
 
-  return <JobsContext.Provider value={jobs}>{children}</JobsContext.Provider>
+  return (
+    <JobsContext.Provider value={jobs}>
+      {offline && <div className="callout warn offline-note" role="status">Lost the live connection to the app. Retrying…</div>}
+      {children}
+    </JobsContext.Provider>
+  )
 }
 
 /** Keeps --bottombar-h equal to the height of the fixed bottom bar (player or decisions), so job cards sit above it. */
@@ -87,7 +98,7 @@ export function JobBar() {
   const visible = jobs.filter(j => !hidden.has(j.id))
   if (!visible.length) return null
   return (
-    <div className="jobbar">
+    <div className="jobbar" role="status" aria-live="polite">
       {visible.map(job => {
         const active = job.status === 'running' || job.status === 'queued'
         const pct = job.total ? Math.round((100 * job.done) / job.total) : 0
@@ -98,12 +109,13 @@ export function JobBar() {
               <StatusBadge status={job.status} />
               <span className="spacer" />
               {active ? (
-                <button className="small" onClick={() => api.post(`/jobs/${job.id}/cancel`)}>Cancel</button>
+                <button className="small" onClick={() => attempt(api.post(`/jobs/${job.id}/cancel`))}>Cancel</button>
               ) : (
-                <button className="small ghost" onClick={() => setHidden(new Set(hidden).add(job.id))}>✕</button>
+                <button className="small ghost" aria-label="Dismiss" onClick={() => setHidden(new Set(hidden).add(job.id))}>✕</button>
               )}
             </div>
             <small>{job.total ? `${job.done}/${job.total} · ` : ''}{job.message}</small>
+            {job.type === 'soulseek_download' && <SoulseekSongs job={job} />}
             {active && (
               <div className={`progress${job.total ? '' : ' indeterminate'}`}>
                 <div style={job.total ? { width: `${pct}%` } : undefined} />
@@ -113,23 +125,5 @@ export function JobBar() {
         )
       })}
     </div>
-  )
-}
-
-/** Start a job and return its id. */
-export const startJob = (type: Job['type'], params: Record<string, unknown> = {}) =>
-  api.post<{ id: number }>('/jobs', { type, params })
-
-export const isRunning = (jobs: Job[], type: Job['type']) =>
-  jobs.some(j => j.type === type && (j.status === 'running' || j.status === 'queued'))
-
-/** Measure one song (read-only). The result shows on the Analysis page and in the Library tables. */
-export function AnalyzeButton({ path }: { path: string }) {
-  const jobs = useActiveJobs()
-  return (
-    <button className="small" disabled={isRunning(jobs, 'analyze')} title="Measure this song (files are never changed)"
-      onClick={e => { e.stopPropagation(); startJob('analyze', { path }) }}>
-      Analyze
-    </button>
   )
 }

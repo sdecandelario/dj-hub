@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type PlaylistInfo, type Settings, type SpotifyStatus } from '../api'
-import { startJob } from '../components/jobs'
-import { Badge, ErrorNote, when } from '../components/ui'
+import { Badge, ErrorNote } from '../components/ui'
+import { when } from '../components/format'
+import { attempt } from '../components/errorBus'
 
 const PROJECTS = ['Serge Candel', 'Juventudes Gilderianas', 'Perry Boys']
 
@@ -16,29 +17,28 @@ export default function SettingsPage() {
   const [sources, setSources] = useState<string | null>(null)
   const [newPlaylist, setNewPlaylist] = useState('')
   const [newProject, setNewProject] = useState('')
-  const [imported, setImported] = useState<Record<string, number> | null>(null)
   const refresh = () => ['settings', 'playlists', 'tracks', 'summary'].forEach(k => client.invalidateQueries({ queryKey: [k] }))
 
   const saveSources = useMutation({
     mutationFn: () => api.put('/settings', { sources: (sources ?? '').split('\n').map(s => s.trim()).filter(Boolean) }),
     onSuccess: () => { setSources(null); refresh() },
   })
+  const saveSoulseek = useMutation({
+    mutationFn: (body: { soulseek_min_bitrate?: number; soulseek_candidates?: number }) => api.put('/settings', body),
+    onSuccess: refresh,
+  })
   const add = useMutation({
     mutationFn: () => api.post('/playlists', { value: newPlaylist, project: newProject }),
     onSuccess: () => { setNewPlaylist(''); refresh() },
   })
-  const patch = (id: string, body: object) => api.patch(`/playlists/${id}`, body).then(refresh)
-  const remove = (id: string) => api.del(`/playlists/${id}`).then(refresh)
-  const importLegacy = useMutation({
-    mutationFn: () => api.post<Record<string, number>>('/settings/import-legacy'),
-    onSuccess: data => { setImported(data); startJob('library_scan'); refresh() },
-  })
+  const patch = (id: string, body: object) => attempt(api.patch(`/playlists/${id}`, body).then(refresh))
+  const remove = (id: string) => attempt(api.del(`/playlists/${id}`).then(refresh))
   const s = settings.data
 
   return (
     <>
       <div className="page-head"><div><h1>Settings</h1></div></div>
-      <ErrorNote error={settings.error || saveSources.error || add.error || importLegacy.error} />
+      <ErrorNote error={settings.error || saveSources.error || saveSoulseek.error || add.error} />
       {params.get('spotify') === 'connected' && <div className="callout ok">Spotify is connected. Refresh the playlists to read them in full.</div>}
       <div className="grid-2">
         <div className="panel">
@@ -72,8 +72,8 @@ export default function SettingsPage() {
           <h2>Spotify</h2>
           {spotify.data && !spotify.data.keys && (
             <div className="callout warn">
-              SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set in the shell that started the app. Without them only
-              the first 100 tracks of each playlist are read.
+              SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set in .env. Without them
+              playlists cannot be read.
             </div>
           )}
           {spotify.data?.keys && (
@@ -85,14 +85,26 @@ export default function SettingsPage() {
               </small>
             </>
           )}
-          <h2 style={{ marginTop: 20 }}>Import from the old projects</h2>
-          <p className="muted">Reads DJ_Loudness_Analyzer runs, its downloads cache, the dj-library log and the playlist list.
-            The old files are not changed. Safe to run more than once.</p>
-          <button onClick={() => importLegacy.mutate()} disabled={importLegacy.isPending}>Import</button>
-          {(imported ?? s?.legacy_imported) && (
-            <p style={{ marginTop: 8 }}><small className="muted">Last import: {Object.entries(imported ?? s?.legacy_imported ?? {}).map(([k, v]) => `${v} ${k.replace('_', ' ')}`).join(', ')}</small></p>
-          )}
         </div>
+      </div>
+      <div className="panel">
+        <h2>Soulseek</h2>
+        <p className="muted">
+          Only MP3 files are searched. Each song downloads into the first download folder (inside Soulseek);
+          pick the best version on the Downloads page. The login is SOULSEEK_USERNAME and SOULSEEK_PASSWORD in .env.
+        </p>
+        {s && (
+          <div className="row">
+            <label>Minimum bitrate (kbps){' '}
+              <input type="number" min={128} max={320} step={64} defaultValue={s.soulseek.min_bitrate} key={`b${s.soulseek.min_bitrate}`}
+                onBlur={e => Number(e.target.value) !== s.soulseek.min_bitrate && saveSoulseek.mutate({ soulseek_min_bitrate: Number(e.target.value) })} />
+            </label>
+            <label>Versions per song{' '}
+              <input type="number" min={1} max={50} defaultValue={s.soulseek.candidates} key={`c${s.soulseek.candidates}`}
+                onBlur={e => Number(e.target.value) !== s.soulseek.candidates && saveSoulseek.mutate({ soulseek_candidates: Number(e.target.value) })} />
+            </label>
+          </div>
+        )}
       </div>
       <div className="panel">
         <h2>Playlists</h2>
@@ -106,10 +118,10 @@ export default function SettingsPage() {
                 <td>
                   <input list="projects" defaultValue={p.project} onBlur={e => e.target.value !== p.project && patch(p.id, { project: e.target.value })} />
                 </td>
-                <td>{p.counts.total}{p.possibly_truncated && <> <Badge tone="warn">first 100</Badge></>}</td>
+                <td>{p.counts.total}</td>
                 <td><small>{when(p.refreshed_at)}</small></td>
                 <td><input type="checkbox" checked={p.tracked} onChange={e => patch(p.id, { tracked: e.target.checked })} /></td>
-                <td><button className="small danger" onClick={() => remove(p.id)}>Remove</button></td>
+                <td><button className="small danger" onClick={() => { if (window.confirm(`Remove "${p.name || p.id}" and its tracks from the app? Spotify is not changed.`)) remove(p.id) }}>Remove</button></td>
               </tr>
             ))}
           </tbody>

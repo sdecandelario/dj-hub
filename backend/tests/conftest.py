@@ -1,11 +1,10 @@
 """Every test gets its own library, Trash, download folder and database in a temp folder."""
-import os
+import shutil
 import subprocess
 
 import pytest
 
 from app import config, db
-from app.core import spotify
 
 
 @pytest.fixture
@@ -19,15 +18,14 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("DJ_SOURCES", str(downloads))
     monkeypatch.setenv("DJ_REKORDBOX_DIR", str(tmp_path / "rekordbox"))
     monkeypatch.setenv("DJ_HUB_DB", str(tmp_path / "test.db"))
-    monkeypatch.setenv("DJ_HUB_LEGACY_DIR", str(tmp_path / "legacy"))
-    monkeypatch.setattr(spotify, "TOKEN_PATH", tmp_path / "token.json")
-    monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
+    for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "LASTFM_API_KEY", "SOULSEEK_USERNAME", "SOULSEEK_PASSWORD"):   # never the real .env keys
+        monkeypatch.delenv(key, raising=False)
     config.reload_config()
     db.reset_engine()
     db.migrate()
     config.get_config().settle_seconds = 0
     yield type("Env", (), {"root": root, "trash": trash, "downloads": downloads, "tmp": tmp_path,
-                                  "rekordbox": tmp_path / "rekordbox"})
+                           "rekordbox": tmp_path / "rekordbox"})
     db.reset_engine()
 
 
@@ -38,8 +36,13 @@ def fake_audio(path, content=b"x"):
     return path
 
 
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+
+
 def real_audio(path, seconds=3, frequency=440, bitrate="320k", title=None, artist=None):
-    """A real MP3 made with ffmpeg."""
+    """A real MP3 made with ffmpeg (the test is skipped when ffmpeg is missing)."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is not installed")
     path.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency={frequency}:duration={seconds}",
            "-b:a", bitrate]
@@ -55,5 +58,5 @@ def real_audio(path, seconds=3, frequency=440, bitrate="320k", title=None, artis
 def client(env):
     from fastapi.testclient import TestClient
     from app.main import app
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://localhost") as c:
         yield c
