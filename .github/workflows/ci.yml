@@ -1,7 +1,8 @@
 # Lint and tests on every push to main and every PR into main.
 # A non-draft PR from this repository that passes is squash-merged by the `merge` job
 # (GitHub's own auto-merge needs branch protection, which a free private repo does not have).
-# The branch is deleted by the repository setting "Automatically delete head branches".
+# The repository setting "Automatically delete head branches" covers PRs merged by hand; it does not fire for a
+# merge made by GitHub Actions, so `--delete-branch` deletes the branch here.
 name: CI
 
 on:
@@ -52,7 +53,7 @@ jobs:
     steps:
       # --match-head-commit: only merge the exact commit that was checked.
       - run: >-
-          gh pr merge ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --squash
+          gh pr merge ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --squash --delete-branch
           --match-head-commit ${{ github.event.pull_request.head.sha }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

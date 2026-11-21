@@ -35,7 +35,7 @@ Artist and title tags use Spotify's spelling (see the profiles below).
 
 ## Working in this project
 
-- CI (`.github/workflows/ci.yml`) runs `make lint` and `make test` on every PR into main and squash-merges the PR when they pass (head branch deleted by the repo setting). Mark a PR as draft to keep it open.
+- CI (`.github/workflows/ci.yml`) runs `make lint` and `make test` on every PR into main and squash-merges the PR when they pass and deletes its branch. Mark a PR as draft to keep it open.
 - Safe to run without asking: `make test`, `make lint`, `uv run --project backend pytest`, `npm --prefix frontend run build`.
 - Tests use temporary folders and databases (`backend/tests/conftest.py`); never point tests at the real library.
 - Ask before running anything that applies a batch (`djhub ... --apply`, `POST /api/batches/{id}/apply`) on the real library.
