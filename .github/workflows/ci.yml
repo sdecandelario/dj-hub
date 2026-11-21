@@ -1,0 +1,58 @@
+# Lint and tests on every push to main and every PR into main.
+# A non-draft PR from this repository that passes is squash-merged by the `merge` job
+# (GitHub's own auto-merge needs branch protection, which a free private repo does not have).
+# The branch is deleted by the repository setting "Automatically delete head branches".
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg (audio tests)
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm --prefix frontend ci
+      - run: make lint
+      - run: make test
+
+  merge:
+    needs: check
+    if: >-
+      github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # --match-head-commit: only merge the exact commit that was checked.
+      - run: >-
+          gh pr merge ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --squash
+          --match-head-commit ${{ github.event.pull_request.head.sha }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
