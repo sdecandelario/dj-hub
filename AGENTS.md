@@ -35,7 +35,7 @@ Artist and title tags use Spotify's spelling (see the profiles below).
 
 ## Working in this project
 
-- CI (`.github/workflows/ci.yml`) runs `make lint` and `make test` on every PR into main and squash-merges the PR when they pass and deletes its branch. Mark a PR as draft to keep it open.
+- Changes reach main through a PR: push the branch, `gh pr create --base main`, wait for CI (`.github/workflows/ci.yml` runs `make lint` and `make test`, `gh pr checks --watch`), then `gh pr merge --squash` from this Mac. The repo setting deletes the merged branch. Never push to main directly.
 - Safe to run without asking: `make test`, `make lint`, `uv run --project backend pytest`, `npm --prefix frontend run build`.
 - Tests use temporary folders and databases (`backend/tests/conftest.py`); never point tests at the real library.
 - Ask before running anything that applies a batch (`djhub ... --apply`, `POST /api/batches/{id}/apply`) on the real library.
