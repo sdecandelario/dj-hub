@@ -120,7 +120,7 @@ export default function Playlists() {
               const job = downloads.get(query)
               return (
               <Fragment key={t.spotify_id}>
-              <tr>
+              <tr className={picked.selected.has(t.spotify_id) ? 'selected' : undefined}>
                 <td>
                   {t.status !== 'have' && (
                     <input type="checkbox" aria-label="Select" checked={picked.selected.has(t.spotify_id)}
