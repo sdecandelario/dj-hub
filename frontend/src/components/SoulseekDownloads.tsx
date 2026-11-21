@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, type Job } from '../api'
 import { attempt } from './errorBus'
-import { isRunning, startJob, useActiveJobs } from './jobsContext'
+import { isActive, startJob, useSoulseekJobs } from './jobsContext'
 import { basename } from './format'
 import { Badge, StatusBadge } from './ui'
 
@@ -12,19 +12,58 @@ type Transfer = { username: string; path: string; size: number; bytes?: number; 
 const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`
 const TONE: Record<string, string> = { complete: 'ok', downloading: 'accent', failed: 'bad', aborted: 'bad' }
 
-/** "Download selected": one Soulseek job (one login, parallel searches) for all the ticked songs. */
-export function DownloadSelectedButton({ queries, onStarted }: { queries: string[]; onStarted: () => void }) {
-  const jobs = useActiveJobs()
+/** "Download selected": one Soulseek job (one login, parallel searches) for all the ticked songs. Songs already
+ *  queued or downloading are left out. While another download runs, the new job waits in the queue. */
+export function DownloadSelectedButton({ queries: ticked, onStarted }: { queries: string[]; onStarted: () => void }) {
+  const downloads = useSoulseekJobs()
+  const queries = ticked.filter(q => !isActive(downloads.get(q)))
   const start = useMutation({
     mutationFn: () => startJob('soulseek_download', { queries }),
     onSuccess: id => { if (id) onStarted() },
   })
   return (
-    <button className="primary" disabled={!queries.length || isRunning(jobs, 'soulseek_download') || start.isPending}
-      title="Search Soulseek (MP3 320) for all ticked songs at once and download the best versions"
+    <button className="primary" disabled={!queries.length || start.isPending}
+      title="Search Soulseek (MP3 320) for all ticked songs at once and download the best versions. Waits if another download runs."
       onClick={() => start.mutate()}>
       Download selected{queries.length ? ` (${queries.length})` : ''}
     </button>
+  )
+}
+
+/** One song's state in a Soulseek job, in a few words, with a badge tone. */
+function songState(job: Job, query: string): { label: string; tone?: string } {
+  if (job.status === 'queued') return { label: 'Queued' }
+  const song = ((job.summary.songs ?? {}) as Record<string, Song>)[query]
+  const files = song?.files ?? []
+  if (job.status === 'running') {
+    if (!song) return { label: 'Searching', tone: 'accent' }
+    if (!files.length) return { label: 'Nothing found', tone: 'warn' }
+    if (files.every(f => f.state === 'complete')) return { label: 'Downloaded', tone: 'ok' }
+    const size = files.reduce((n, f) => n + f.size, 0)
+    const bytes = files.reduce((n, f) => n + (f.state === 'complete' ? f.size : f.bytes ?? 0), 0)
+    return { label: `Downloading ${size ? Math.round((100 * bytes) / size) : 0}%`, tone: 'accent' }
+  }
+  if (files.length) return { label: `Downloaded (${files.length})`, tone: 'ok' }
+  if (job.status === 'done') return { label: 'Nothing downloaded', tone: 'warn' }
+  return { label: job.status, tone: 'bad' }
+}
+
+/** Compact list of a Soulseek job's songs and their states, for the job card. */
+export function SoulseekSongs({ job }: { job: Job }) {
+  const queries = (job.params.queries ?? []) as string[]
+  return (
+    <div className="job-songs">
+      {queries.map(q => {
+        const state = songState(job, q)
+        return (
+          <div key={q} className="row">
+            <small title={q}>{q}</small>
+            <span className="spacer" />
+            <Badge tone={state.tone}>{state.label}</Badge>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

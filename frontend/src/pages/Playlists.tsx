@@ -2,16 +2,18 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlaylistInfo, type PlaylistTrack } from '../api'
-import { isRunning, startJob, useActiveJobs, useSoulseekJobs } from '../components/jobsContext'
+import { isActive, isRunning, startJob, useActiveJobs, useSoulseekJobs } from '../components/jobsContext'
 import { ListToolbar } from '../components/ListToolbar'
 import { useSelection } from '../components/useSelection'
 import { DownloadPanel, DownloadSelectedButton } from '../components/SoulseekDownloads'
 import { Badge, Card, Empty, ErrorNote, StatusBadge } from '../components/ui'
 import { when } from '../components/format'
 
-type Filter = 'missing' | 'maybe' | 'waiting' | 'have' | 'all'
+type Filter = 'missing' | 'maybe' | 'waiting' | 'downloading' | 'have' | 'all'
 
 const STATUS_LABEL = { have: 'In library', maybe: 'Check', missing: 'Missing' }
+
+const queryOf = (t: PlaylistTrack) => `${t.artists[0] ?? ''} ${t.title}`
 
 export default function Playlists() {
   const [tab, setTab] = useState('all')
@@ -28,13 +30,15 @@ export default function Playlists() {
   const download = useMutation({ mutationFn: (query: string) => startJob('soulseek_download', { queries: [query] }) })
 
   const all = useMemo(() => tracks.data ?? [], [tracks.data])
-  const counts = useMemo(() => ({
+  const downloading = (t: PlaylistTrack) => t.status !== 'have' && isActive(downloads.get(queryOf(t)))
+  const counts = {
     missing: all.filter(t => t.status === 'missing').length,
     maybe: all.filter(t => t.status === 'maybe').length,
     waiting: all.filter(t => t.status !== 'have' && t.download).length,
+    downloading: all.filter(downloading).length,
     have: all.filter(t => t.status === 'have').length,
     all: all.length,
-  }), [all])
+  }
 
   const q = search.toLowerCase()
   const rows = all.filter(t => {
@@ -42,13 +46,13 @@ export default function Playlists() {
       missing: t.status === 'missing',
       maybe: t.status === 'maybe',
       waiting: t.status !== 'have' && !!t.download,
+      downloading: downloading(t),
       have: t.status === 'have',
       all: true,
     }[filter]
     return ok && `${t.artists.join(' ')} ${t.title}`.toLowerCase().includes(q)
   })
 
-  const queryOf = (t: PlaylistTrack) => `${t.artists[0] ?? ''} ${t.title}`
   const downloadable = rows.filter(t => t.status !== 'have')
   const ticked = downloadable.filter(t => picked.selected.has(t.spotify_id))
 
@@ -88,6 +92,8 @@ export default function Playlists() {
         <Card label="Missing" value={counts.missing} selected={filter === 'missing'} onClick={() => setFilter('missing')} />
         <Card label="Download waiting" value={counts.waiting} hint="Found in the download folders"
           selected={filter === 'waiting'} onClick={() => setFilter('waiting')} />
+        <Card label="Downloading" value={counts.downloading} hint="Queued or running on Soulseek"
+          selected={filter === 'downloading'} onClick={() => setFilter('downloading')} />
         <Card label="Check" value={counts.maybe} hint="Other version or similar title" selected={filter === 'maybe'}
           onClick={() => setFilter('maybe')} />
         <Card label="In library" value={counts.have} selected={filter === 'have'} onClick={() => setFilter('have')} />
@@ -103,7 +109,7 @@ export default function Playlists() {
         ]}>
         <DownloadSelectedButton queries={ticked.map(queryOf)} onStarted={picked.clear} />
       </ListToolbar>
-      <div className="panel flush table-wrap">
+      <div className="panel flush list-table">
         <table>
           <thead>
             <tr>
@@ -140,8 +146,8 @@ export default function Playlists() {
                 {tab === 'all' && <td><small>{t.playlists.join(', ')}</small></td>}
                 <td className="actions">
                   {t.status !== 'have' && (
-                    <button className="small" disabled={isRunning(jobs, 'soulseek_download') || download.isPending}
-                      title="Search Soulseek (MP3 320) and download the best versions into the download folder"
+                    <button className="small" disabled={isActive(job) || download.isPending}
+                      title="Search Soulseek (MP3 320) and download the best versions into the download folder. Waits if another download runs."
                       onClick={() => download.mutate(query)}>
                       Download
                     </button>

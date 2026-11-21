@@ -4,6 +4,7 @@ import { api, type Job } from '../api'
 import { attempt } from './errorBus'
 import { JOB_LABELS } from './format'
 import { JobsContext, useActiveJobs } from './jobsContext'
+import { SoulseekSongs } from './SoulseekDownloads'
 import { StatusBadge } from './ui'
 
 // Which cached queries to refresh when a job of this type finishes.
@@ -93,6 +94,7 @@ export function JobBar() {
               )}
             </div>
             <small>{job.total ? `${job.done}/${job.total} · ` : ''}{job.message}</small>
+            {job.type === 'soulseek_download' && <SoulseekSongs job={job} />}
             {active && (
               <div className={`progress${job.total ? '' : ' indeterminate'}`}>
                 <div style={job.total ? { width: `${pct}%` } : undefined} />

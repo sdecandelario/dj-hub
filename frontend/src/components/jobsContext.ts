@@ -10,8 +10,9 @@ export const useActiveJobs = () => useContext(JobsContext)
 export const startJob = (type: Job['type'], params: Record<string, unknown> = {}) =>
   attempt(api.post<{ id: number }>('/jobs', { type, params }))
 
-export const isRunning = (jobs: Job[], type: Job['type']) =>
-  jobs.some(j => j.type === type && (j.status === 'running' || j.status === 'queued'))
+export const isActive = (job: Job | undefined) => job?.status === 'running' || job?.status === 'queued'
+
+export const isRunning = (jobs: Job[], type: Job['type']) => jobs.some(j => j.type === type && isActive(j))
 
 /** The latest Soulseek download job per search query ("Artist Title"): live while running, as left when finished.
  *  One job can cover several queries, so it appears under each of them. */
