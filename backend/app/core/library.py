@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .audio import audio_hash, quick_fingerprint
-from .names import guess_from_filename, normalize, song_folder_name, track_file_name
+from .names import guess_from_filename, is_similar, match_key, normalize, song_folder_name, track_file_name
 from .tags import read_tags, write_tags
 
 AUDIO = {".mp3", ".wav", ".aif", ".aiff", ".flac", ".m4a"}
@@ -249,28 +249,38 @@ def _same_file(a, b):
         return False
 
 
-def plan_apply(root, tracks, items):
+def plan_apply(root, tracks, items, trash=None):
     """Copies and moves inside the library.
 
     items: [{"source": rel path, "to": "Genres/X" | "00 Inbox" | "Sessions/<name>", "action": "copy"|"move",
-             optional "artist" and "title": rename an Inbox file while moving it}]
+             optional "artist" and "title": rename an Inbox file while moving it,
+             optional "discard": true (Inbox move only): the file goes to 00 Rejected/<Artist - Title>,
+             optional "replace": true (Inbox move only): the song's genre copies go to the Trash and the new
+             file takes their place in that genre folder}]
     `source` is the song's path when the plan starts; later steps follow earlier moves.
     """
-    return _ApplyPlanner(root, tracks).run(items)
+    return _ApplyPlanner(root, tracks, trash).run(items)
 
 
 class _ApplyPlanner:
     """State of one `plan_apply`: what earlier items of the same plan already did. A problem with an item
     is a ValueError; the item is then skipped and the problem listed."""
 
-    def __init__(self, root, tracks):
+    def __init__(self, root, tracks, trash):
         self.root = Path(root)
+        self.trash = trash
+        self.tracks = tracks
+        self.info = {t["path"]: t for t in tracks}
         self.songs = by_song(tracks)
         self.fp_of = {t["path"]: t["fp"] for t in tracks}
         self.planned = {}   # (target folder, fp) -> new file, so a plan cannot add a song twice
         self.located = {}   # original source -> where an earlier step of this plan moved it
         self.gone = set()   # files an earlier step moved away
         self.genres = {fp: set(genre_folders(copies)) for fp, copies in self.songs.items()}
+        self.by_name = {}   # (artist, title) -> genre copies, to spot the same song with another audio file
+        for t in tracks:
+            if t["kind"] == "genre" and t["title"]:
+                self.by_name.setdefault(match_key(t["artist"], t["title"]), []).append(t)
         self.plan = Plan("apply")
         genres_dir = self.root / GENRES
         self.folders = {p.name for p in genres_dir.iterdir() if p.is_dir()} if genres_dir.is_dir() else set()
@@ -334,7 +344,65 @@ class _ApplyPlanner:
                     {"artist": artist or None, "title": title})
         return file_name, {}
 
+    def _discard_target(self, item):
+        """Discard: the file goes to 00 Rejected/<Artist - Title>, like a version not chosen in Downloads."""
+        track = self.info.get(item.get("source", ""))
+        if not item.get("discard") or track is None:
+            return item
+        song = f"{track['artist']} - {track['title']}" if track["artist"] else track["title"]
+        return {**item, "to": f"{REJECTED}/{song_folder_name(song)}", "action": "move"}
+
+    def _replaced(self, item, source, fp, kind, action):
+        """Genre copies an Inbox file replaces: the same audio file, the same artist and title, or else
+        a similar spelling (the "Similar" badge of the Inbox). They must sit in one genre folder."""
+        if kind != "inbox" or action != "move" or self.trash is None:
+            raise ValueError(f"{source}: only an Inbox file can replace a library song (move)")
+        own = self.songs[fp][0]
+        key = match_key(item["artist"] if item.get("artist") is not None else own["artist"],
+                        item["title"] if item.get("title") is not None else own["title"])
+        genre = [t for t in self.tracks if t["kind"] == "genre" and t["path"] not in self.gone]
+        old = [t for t in genre if t["fp"] == fp or (key[1] and match_key(t["artist"], t["title"]) == key)]
+        if not old and key[1]:
+            old = [t for t in genre if t["fp"] != fp and is_similar(key, match_key(t["artist"], t["title"]))]
+        if not old:
+            raise ValueError(f"{source}: no copy in a genre folder to replace")
+        folders = {t["folder"] for t in old}
+        if len(folders) > 1:
+            raise ValueError(f"{source}: the song is in several genres ({', '.join(sorted(folders))}); "
+                             "remove the extra copies first")
+        return sorted(t["path"] for t in old)
+
+    def _trash_replaced(self, source, replacing):
+        if not replacing:
+            return
+        trash_dir = Path(self.trash) / f"djhub-{stamp()}"
+        for old_path in replacing:
+            self.plan.steps.append(Step("move", str(self.root / old_path), str(trash_dir / old_path), label="trash"))
+            self.gone.add(old_path)
+            self.plan.notes.append(f"{old_path}: replaced by {source} and sent to the Trash; if Rekordbox already "
+                                   "imported it, re-link the track")
+        old_fps = {self.fp_of[o] for o in replacing}
+        session_copies = sorted(t["path"] for t in self.tracks if t["kind"] == "session" and t["fp"] in old_fps)
+        if session_copies:
+            self.plan.notes.append(f"Session copies of the old file stay as they are: {', '.join(session_copies)}")
+
+    def _note_twins(self, source, fp, tags):
+        """An Inbox file going to a genre while the same song (another audio file) is already in one."""
+        own = self.songs[fp][0]
+        key = match_key(tags.get("artist") or own["artist"], tags.get("title") or own["title"])
+        twins = [t["path"] for t in self.by_name.get(key, []) if t["fp"] != fp and t["path"] not in self.gone]
+        close = not twins
+        if close:
+            twins = [t["path"] for other, copies in self.by_name.items() if is_similar(key, other)
+                     for t in copies if t["fp"] != fp and t["path"] not in self.gone]
+        if twins:
+            self.plan.notes.append(
+                f"{source}: a song with {'a similar' if close else 'this'} artist and title is already in the library "
+                f"({', '.join(twins)}); this will be a second copy, nothing is replaced. "
+                "To replace the old file instead, cancel and tick Replace on this song")
+
     def _add(self, item):
+        item = self._discard_target(item)
         source, to, action, to_kind, to_name = self._parse(item)
         if action == "move" and source in self.located:
             raise ValueError(f"{source}: moved twice in one plan; list one move per file")
@@ -342,6 +410,11 @@ class _ApplyPlanner:
         kind, folder = classify(Path(current))
         fp = self.fp_of[source]
         self._check_move_out(source, kind, action, to_kind)
+        replacing = []
+        if item.get("replace"):
+            replacing = self._replaced(item, source, fp, kind, action)
+            to_kind, to_name = "genre", self.info[replacing[0]]["folder"]
+            to = str(Path(GENRES) / to_name)
         existing = [c["path"] for c in self.songs[fp]
                     if str(Path(c["path"]).parent) == to and c["path"] not in self.gone]
         if existing or (to, fp) in self.planned:
@@ -351,9 +424,13 @@ class _ApplyPlanner:
         self._check_genre(source, fp, kind, folder, action, to_kind, to_name)
         file_name, tags = self._rename(item, source, kind, action)
         dest = str(Path(to) / file_name)
-        if ((self.root / dest).exists() and dest not in self.gone) or dest in self.planned.values():
+        if ((self.root / dest).exists() and dest not in self.gone and dest not in replacing) \
+                or dest in self.planned.values():
             raise ValueError(f"{source}: a different file named {Path(dest).name!r} already exists in {to}")
         self.planned[(to, fp)] = dest
+        self._trash_replaced(source, replacing)
+        if kind == "inbox" and to_kind == "genre" and not replacing:
+            self._note_twins(source, fp, tags)
         if action == "move":
             self.located[source] = dest
             self.gone.add(current)
@@ -434,9 +511,10 @@ def _intake_notes(path, by_fp, by_name):
     """What the library already has of a download going to the Inbox (a note, never a block)."""
     fp = quick_fingerprint(path)
     if fp in by_fp:
-        return [f"the same file is already in the library: {by_fp[fp]}"]
+        return [f"the same file is already in the library: {by_fp[fp]} (nothing is replaced; a duplicate will sit "
+                "in the Inbox)"]
     info = describe_file(path)
-    candidates = by_name.get((normalize(info["artist"]), normalize(info["title"])), [])
+    candidates = by_name.get(match_key(info["artist"], info["title"]), [])
     same = _same_audio(path, candidates)   # a re-tagged library copy has another fingerprint, not other audio
     other = [t["path"] for t in candidates if t["path"] not in same]
     notes = []
@@ -463,7 +541,7 @@ def plan_intake(root, sources, tracks, picks):
     by_name = {}
     for t in library:
         if t["title"]:
-            by_name.setdefault((normalize(t["artist"]), normalize(t["title"])), []).append(t)
+            by_name.setdefault(match_key(t["artist"], t["title"]), []).append(t)
     plan = Plan("intake")
     taken, seen = set(), set()
     for pick in picks:
@@ -557,6 +635,7 @@ def plan_undo(root, trash, batch_label, ops):
     trash_dir = Path(trash) / f"djhub-undo-{batch_label}"
     root = Path(root)
     plan = Plan("undo")
+    vacated = set()   # paths an earlier undo step empties (a replacement is undone before the old file returns)
     for op in reversed(ops):
         source, dest = Path(op["source"]), Path(op["dest"])
         if op["action"] == "tags":
@@ -578,9 +657,10 @@ def plan_undo(root, trash, batch_label, ops):
         if not Path(step.source).exists():
             plan.problems.append(f"no longer there: {step.source}")
             continue
-        if Path(step.dest).exists() and not _same_file(step.source, step.dest):
+        if Path(step.dest).exists() and step.dest not in vacated and not _same_file(step.source, step.dest):
             plan.problems.append(f"something is already at {step.dest}")
             continue
+        vacated.add(step.source)
         plan.steps.append(step)
     return plan
 

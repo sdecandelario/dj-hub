@@ -105,6 +105,8 @@ export type LibraryFile = {
   present: boolean
   quick_fp: string | null
   loudness?: Loudness | null
+  /** Inbox rows only: copies of the same song already in genre or session folders. */
+  in_library?: { rel_path: string; kind: string; folder: string; match: 'file' | 'name' | 'similar'; integrated_lufs: number | null }[]
 }
 
 export type Measurement = {
@@ -208,6 +210,8 @@ export type LibraryVerdict = {
   reason: string
   library_path: string
   length_differs: boolean
+  /** LU louder (+) or quieter (-) than the library copy; null when not measured. */
+  loudness_diff: number | null
 }
 
 export type LibraryVersion = Pick<Version, 'path' | 'name' | 'file_id' | 'sha256' | 'status' | 'integrated_lufs'
@@ -221,6 +225,8 @@ export type Song = {
   song: string
   suggested: string | null
   in_library: string[]
+  /** The library copy has a slightly different spelling of artist or title. */
+  in_library_similar?: boolean
   /** Files with different names were grouped as one song. */
   grouped_by_name?: boolean
   /** Measured library copies, best first (missing in reviews made before this check existed). */
@@ -242,6 +248,8 @@ export type Review = {
   settle_seconds: number
   songs: Song[]
 }
+
+export type PendingDownloads = { files: number; songs: number; new: number; reviewed_at: string | null }
 
 export type PlaylistInfo = {
   id: string
@@ -311,4 +319,23 @@ export type Summary = {
   recent_jobs: Job[]
   recent_batches: { id: number; label: string; status: string; created_at: string; kind: string }[]
   decisions: number
+}
+
+export type RekordboxTrack = {
+  title: string
+  old_path: string
+  reason: string
+  logs: string[]
+  status: 'ok' | 'moved' | 'replaced' | 'similar' | 'missing'
+  new_path: string
+  new_rel: string
+  file_id: number | null
+  candidates: { path: string; rel_path: string; kind: string; file_id: number | null }[]
+  trail: { batch_id: number; batch: string; status: string; action: string; dest: string }[]
+}
+
+export type RekordboxReview = {
+  folder: string
+  logs: { name: string; tracks: number }[]
+  tracks: RekordboxTrack[]
 }

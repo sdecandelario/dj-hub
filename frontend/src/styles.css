@@ -128,6 +128,8 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; 
 
 /* Tables */
 .table-wrap { overflow: auto; }
+/* .panel.flush clips its corners; without this it also beat .table-wrap and made capped tables unscrollable. */
+.panel.flush.table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); position: sticky; top: 0;
@@ -157,12 +159,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 /* Folder tree */
 .tree h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 8px 4px; }
+.tree-row { display: flex; align-items: center; gap: 4px; }
+.tree-row input { margin: 0 0 0 4px; flex: none; }
+.tree-gap { width: 17px; flex: none; }
+.tree-head { display: flex; align-items: center; justify-content: space-between; }
+.tree-head .small { width: auto; padding: 2px 8px; }
+.tree-selection { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; margin-bottom: 6px;
+  border-radius: 8px; background: var(--accent-soft); }
+.tree-selection .small { width: auto; }
 .tree button { width: 100%; justify-content: space-between; border: 0; background: none; padding: 6px 8px; }
 .tree button:hover { background: var(--panel-2); }
 .tree button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
 /* Job bar */
-.jobbar { position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20;
+.jobbar { position: fixed; bottom: calc(var(--bottombar-h, 0px) + 16px); right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20;
   width: 340px; }
 .job-songs { max-height: 220px; overflow: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 .job-songs small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }

@@ -73,6 +73,8 @@ Plan file format (write it to the session scratchpad, not the library):
 
 `source` is always the song's path when the plan starts; the script follows a move made earlier in the same plan.
 
+For an Inbox song already in the library, a move item can carry `"replace": true` (the old genre copy goes to the Trash and the Inbox file takes its place in that genre folder; session copies can follow in the same plan) or `"discard": true` (the Inbox file goes to `00 Rejected/<Artist - Title>`; give it no genre or session items).
+
 Picks file format for `intake` (`djhub intake-decided` builds this from the Downloads page, so write it by hand only when asked):
 
 ```json
@@ -97,7 +99,7 @@ Typical tasks:
   1. Run `djhub review` (read-only; new files are measured, earlier ones come from the cache). Report files, songs, identical copies, likely transcodes, songs already in the library and songs wanted by a playlist.
   2. The user opens the Downloads page in DJ Hub, listens, and picks Keep / Reject all / Later per song. They can apply the move there themselves.
   3. If they ask you to do it: run `intake-decided` as a dry run and summarize: songs to the Inbox, versions to Rejected, NOTE lines (already in the library or a possible upgrade) and PROBLEM lines. Apply after approval.
-  4. Then sort the Inbox (below). For a "possible upgrade", ask whether to replace the old genre copy; remember that Rekordbox will lose the old path.
+  4. Then sort the Inbox (below). For a "possible upgrade", ask whether to replace the old genre copy (`"replace": true`) or discard the new file (`"discard": true`); remember that Rekordbox will lose the old path.
   5. Final check: when the user is happy, `remove "00 Rejected"` (or one song folder) sends the rejected versions to the Trash.
 - **Sort the inbox:** `scan "00 Inbox"`, propose a genre per song (table: artist, title, proposed genre, unsure marker), let the user adjust, write the plan, dry run, apply.
 - **Add to a session:** `find` the songs, then a plan that copies each song from its genre folder into the session folder. If a song has no genre yet, sort it first.

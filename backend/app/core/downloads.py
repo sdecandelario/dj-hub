@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from .audio import EXT, LOSSLESS
-from .names import COPY_SUFFIX, normalize, parse_download_filename, split_version
+from .names import COPY_SUFFIX, is_similar, normalize, parse_download_filename, split_version, strip_remaster
 
 EDIT_GAP_SECONDS = 10         # versions further apart in length are a different edit
 TRANSCODE_GAP_DB = 85         # level difference full band vs > 19.5 kHz
@@ -63,9 +63,9 @@ def song_identity(item):
 
 def inbox_name(song, item):
     """(artist, title) to name the kept file: the song's artist and the version's full title,
-    so remix and version labels stay in the name."""
+    so remix and version labels stay in the name. A plain "remaster" label is left out."""
     title = item.get('tag_title') or parse_download_filename(Path(item['path']).stem)[1]
-    return song.get('artist') or item.get('artist') or '', title or song.get('title') or ''
+    return song.get('artist') or item.get('artist') or '', strip_remaster(title or song.get('title') or '')
 
 
 def missing_info(song, kept):
@@ -280,6 +280,11 @@ def build_songs(items, library):
         names = {(i['artist'], i['title']) for i in members}
         in_library = [t for a, t_ in names for t in library.get((normalize(a), normalize(t_)), [])]
         in_library += library.get((normalize(artist), normalize(title)), [])
+        similar = False
+        if not in_library:   # no exact match: a library song with a slightly different spelling
+            key = (normalize(artist), normalize(title))
+            in_library = [t for other, tracks in library.items() if is_similar(key, other) for t in tracks]
+            similar = bool(in_library)
         for i in members:
             i['name_differs'] = (normalize(i['artist']), normalize(i['title'])) != (normalize(artist), normalize(title))
             i['listed_as'] = f"{i['artist']} - {i['title']}" if i['artist'] else i['title']
@@ -289,6 +294,7 @@ def build_songs(items, library):
             'song': f'{artist} - {title}' if artist else title,
             'suggested': suggested,
             'in_library': sorted({t['path'] for t in in_library}),
+            'in_library_similar': similar,
             'grouped_by_name': any(i['name_differs'] for i in members),
             'versions': members,
         })
@@ -315,6 +321,16 @@ def _quality_key(item, best_gap):
             'bitrate': full[5], 'hf_detail': full[6]}
 
 
+LOUDNESS_GAP_LU = 4.0       # from here on, a level difference is shown next to the verdict
+MIN_USABLE_KBPS = 160       # a louder MP3 at or above this is not called worse for a lower bitrate
+
+
+def _loudness_diff(version, ref):
+    """How much louder the download is than the library copy, in LU (None when unmeasured)."""
+    a, b = version.get('integrated_lufs'), ref.get('integrated_lufs')
+    return None if a is None or b is None else round(a - b, 1)
+
+
 def _verdict(version, ref, keys):
     if version['sha256'] and version['sha256'] == ref['sha256']:
         return 'same', 'Identical file to the library copy'
@@ -326,6 +342,10 @@ def _verdict(version, ref, keys):
             continue
         if field == 'bitrate':
             text = f"{version['bitrate_kbps'] or '?'} kbps vs {ref['bitrate_kbps'] or '?'} kbps in the library"
+            diff = _loudness_diff(version, ref)
+            if (mine[field] > theirs[field] and diff is not None and diff >= LOUDNESS_GAP_LU
+                    and (version['bitrate_kbps'] or 0) >= MIN_USABLE_KBPS):
+                return 'similar', f'{text}, but {diff:.1f} LU louder, so it plays at a usable level without gain changes'
             return ('better' if mine[field] < theirs[field] else 'worse'), text
         return ('better', better) if mine[field] < theirs[field] else ('worse', worse)
     return 'similar', 'Same quality level as the library copy'
@@ -356,7 +376,7 @@ def compare_with_library(versions, library_items):
         length_differs = bool(version['duration_seconds'] and ref['duration_seconds'] and
                               abs(version['duration_seconds'] - ref['duration_seconds']) > EDIT_GAP_SECONDS)
         version['vs_library'] = {'verdict': verdict, 'reason': reason, 'library_path': ref['path'],
-                                 'length_differs': length_differs}
+                                 'length_differs': length_differs, 'loudness_diff': _loudness_diff(version, ref)}
     return ranked
 
 

@@ -24,6 +24,12 @@ def review(session=Depends(get_session, scope="function")):
     return downloads.review_view(session)
 
 
+@router.get("/downloads/pending")
+def pending(session=Depends(get_session, scope="function")):
+    """Cheap count of what is waiting in the download folders (no measuring)."""
+    return downloads.pending(session)
+
+
 @router.put("/downloads/decisions/{song_key}")
 def decide(song_key: str, body: DecisionBody, session=Depends(get_session, scope="function")):
     try:

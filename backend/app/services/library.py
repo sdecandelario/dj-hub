@@ -105,7 +105,7 @@ def make_plan(session, kind, payload):
                                "trash": o.label == "trash", "tags_before": o.tags_before} for o in ops])
     tracks = scan(session)
     if kind == "apply":
-        return lib.plan_apply(cfg.root, tracks, payload.get("items") or [])
+        return lib.plan_apply(cfg.root, tracks, payload.get("items") or [], trash=cfg.trash)
     if kind == "remove":
         return lib.plan_remove(cfg.root, cfg.trash, tracks, payload.get("paths") or [])
     if kind == "rename":
@@ -215,10 +215,18 @@ def apply(session_factory, batch_id):
             follow_moves(session, batch_id)
             sync_library(session)
             result = {"id": batch.id, "status": batch.status, "error": batch.error, "done": state["done"],
-                      "kind": batch.kind, "warnings": warnings}
+                      "kind": batch.kind, "warnings": warnings, "replaced": _replaced(batch.kind, plan, moved)}
         if error and not state["done"]:
             raise BatchError(error)
         return result
+
+
+def _replaced(kind, plan, moved):
+    """Files an apply batch put where an old copy was sent to the Trash: they are measured right away."""
+    done = [step for step in plan.runnable() if step.source in moved]
+    if kind != "apply" or not any(step.label == "trash" for step in done):
+        return []
+    return [step.dest for step in done if step.action == "move" and step.label != "trash"]
 
 
 def forget_unexecuted_ops(session, batch_id, only=None):

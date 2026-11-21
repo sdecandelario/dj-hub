@@ -10,12 +10,12 @@ import { StatusBadge } from './ui'
 // Which cached queries to refresh when a job of this type finishes.
 const REFRESH: Record<string, string[]> = {
   analyze: ['analysis', 'files', 'file', 'summary'],
-  review_downloads: ['downloads', 'summary', 'playlists', 'tracks', 'files'],
+  review_downloads: ['downloads', 'pending', 'summary', 'playlists', 'tracks', 'files'],
   spotify_refresh: ['playlists', 'tracks', 'summary', 'downloads'],
   library_scan: ['files', 'tree', 'summary', 'playlists', 'tracks', 'file'],
   match_playlists: ['playlists', 'tracks', 'summary', 'downloads', 'file'],
   discover: ['candidates'],
-  soulseek_download: ['downloads'],
+  soulseek_download: ['downloads', 'pending'],
 }
 
 /** Subscribes to /api/events and keeps the list of active jobs; refreshes data when jobs finish. */
@@ -71,7 +71,28 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/** Keeps --bottombar-h equal to the height of the fixed bottom bar (player or decisions), so job cards sit above it. */
+function useBottomBarOffset() {
+  useEffect(() => {
+    const root = document.documentElement
+    let watched: Element | null = null
+    const resize = new ResizeObserver(() => root.style.setProperty('--bottombar-h', `${watched?.getBoundingClientRect().height ?? 0}px`))
+    const look = () => {
+      const bar = document.querySelector('.bottombar')
+      if (bar === watched) return
+      if (watched) resize.unobserve(watched)
+      watched = bar
+      if (bar) resize.observe(bar); else root.style.setProperty('--bottombar-h', '0px')
+    }
+    const mutations = new MutationObserver(look)
+    mutations.observe(document.body, { childList: true, subtree: true })
+    look()
+    return () => { mutations.disconnect(); resize.disconnect(); root.style.removeProperty('--bottombar-h') }
+  }, [])
+}
+
 export function JobBar() {
+  useBottomBarOffset()
   const jobs = useActiveJobs()
   const [hidden, setHidden] = useState<Set<number>>(new Set())
   const visible = jobs.filter(j => !hidden.has(j.id))

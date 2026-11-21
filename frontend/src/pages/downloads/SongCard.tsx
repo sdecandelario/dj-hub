@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { LibraryVerdict, LibraryVersion, Song, Version } from '../../api'
+import { AnalyzeButton } from '../../components/AnalyzeButton'
 import { PlayButton } from '../../components/PlayButton'
 import type { Player } from '../../components/usePlayer'
 import { Badge } from '../../components/ui'
@@ -15,9 +16,15 @@ const VERDICT: Record<LibraryVerdict['verdict'], { label: string; tone: string }
 function VerdictBadge({ v }: { v: LibraryVerdict }) {
   const { label, tone } = VERDICT[v.verdict]
   const note = v.length_differs ? ' Different length from the library copy: maybe another edit.' : ''
-  return <Badge tone={tone} title={`${v.reason}.${note}\nLibrary copy: ${v.library_path}`}>
-    {label}{v.length_differs ? ' · other length' : ''}
-  </Badge>
+  const loud = v.loudness_diff !== null && Math.abs(v.loudness_diff) >= 4 ? v.loudness_diff : 0
+  return <>
+    <Badge tone={tone} title={`${v.reason}.${note}\nLibrary copy: ${v.library_path}`}>
+      {label}{v.length_differs ? ' · other length' : ''}
+    </Badge>
+    {loud !== 0 && <> <Badge tone={loud > 0 ? 'info' : 'warn'} title="Loudness difference from the library copy (integrated LUFS)">
+      {loud > 0 ? 'Louder' : 'Quieter'} than library {signed(loud, 1)} LU
+    </Badge></>}
+  </>
 }
 
 const isLossless = (codec: string) => ['flac', 'alac'].includes(codec) || codec.startsWith('pcm')
@@ -50,7 +57,8 @@ function LibraryRow({ song, v, median, player }: {
     <tr className="library-row">
       <td></td>
       <td>
-        <PlayButton player={player} track={{ song: song.id, file: v.file_id, title: song.song, name: v.name }} />
+        <PlayButton player={player} track={{ song: song.id, file: v.file_id, title: song.song, name: v.name }} />{' '}
+        <AnalyzeButton path={v.path} />
       </td>
       <td style={{ minWidth: 240 }}>
         <div title={v.path}><Badge>In library</Badge> {v.name}</div>
@@ -72,7 +80,8 @@ function VersionRow({ song, v, median, kept, onKeep, player }: {
           aria-label="Keep this version" title={v.invalid ? 'Only MP3 files can be kept' : undefined} />
       </td>
       <td>
-        <PlayButton player={player} track={{ song: song.id, file: v.file_id, title: song.song, name: v.name }} />
+        <PlayButton player={player} track={{ song: song.id, file: v.file_id, title: song.song, name: v.name }} />{' '}
+        <AnalyzeButton path={v.path} />
       </td>
       <td style={{ minWidth: 240 }}>
         <div title={v.path}>{v.name}</div>
@@ -93,6 +102,28 @@ function VersionRow({ song, v, median, kept, onKeep, player }: {
   )
 }
 
+/** What keeping a download means when the song is already in the library: nothing is replaced automatically. */
+function ReplaceNotice({ song, verdict }: { song: Song; verdict?: LibraryVerdict }) {
+  const outcome = {
+    better: 'This download looks better than the library copy.',
+    worse: 'This download looks worse than the library copy, so rejecting it is probably right.',
+    similar: 'This download has about the same quality as the library copy.',
+    same: 'This download is the same audio as the library copy.',
+  }[verdict?.verdict ?? 'similar']
+  const loud = verdict?.loudness_diff
+  const level = loud != null && Math.abs(loud) >= 4
+    ? ` It is ${Math.abs(loud).toFixed(1)} LU ${loud > 0 ? 'louder' : 'quieter'}.` : ''
+  return (
+    <div className={`callout ${verdict?.verdict === 'better' ? 'info' : 'warn'}`}>
+      <b>{song.in_library_similar ? 'Looks like a song already in the library (similar name, check it):' : 'Already in the library:'}</b>{' '}
+      {song.in_library.join(', ')}.{' '}
+      {verdict ? `${outcome}${level} ` : 'The library copy could not be measured. '}
+      Keeping the download does <b>not</b> replace it: both copies stay (the new one in 00 Inbox)
+      {verdict?.verdict === 'better' ? ' until you send the old one to the Trash from the Library.' : '.'}
+    </div>
+  )
+}
+
 export function SongCard({ song, median, player, onDecide, highlight }: {
   song: Song; median: number | null; player: Player
   onDecide: (choice: string, keep?: string | null) => void; highlight: boolean
@@ -110,7 +141,9 @@ export function SongCard({ song, median, player, onDecide, highlight }: {
         <Badge>{plural(song.versions.length, 'version')}</Badge>
         {pick?.vs_library
           ? <VerdictBadge v={pick.vs_library} />
-          : song.in_library.length > 0 && <Badge tone="warn" title={song.in_library.join('\n')}>Already in library</Badge>}
+          : song.in_library.length > 0 && <Badge tone="warn" title={song.in_library.join('\n')}>
+            {song.in_library_similar ? 'Similar in library' : 'Already in library'}
+          </Badge>}
         {song.wanted_by.length > 0 && (
           <Badge tone="info" title={song.wanted_by.map(w => `${w.artists.join(', ')} - ${w.title}`).join('\n')}>
             Wanted by {[...new Set(song.wanted_by.flatMap(w => w.playlists))].join(', ')}
@@ -133,6 +166,7 @@ export function SongCard({ song, median, player, onDecide, highlight }: {
         <button className="small" onClick={() => onDecide('later')}>Later</button>
         {d && <button className="small ghost" onClick={() => onDecide('clear')}>Clear</button>}
       </header>
+      {song.in_library.length > 0 && <ReplaceNotice song={song} verdict={pick?.vs_library} />}
       <div className="table-wrap">
         <table>
           <thead>

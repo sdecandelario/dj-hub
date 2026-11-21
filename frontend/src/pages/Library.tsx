@@ -6,6 +6,7 @@ import { useBatch } from '../components/batchContext'
 import { PlayerBar } from '../components/player'
 import { usePlayer } from '../components/usePlayer'
 import { startJob } from '../components/jobsContext'
+import { AnalyzeButton } from '../components/AnalyzeButton'
 import { PlayButton } from '../components/PlayButton'
 import { Badge, Empty, ErrorNote } from '../components/ui'
 import { clickableRow, num, plural } from '../components/format'
@@ -14,6 +15,19 @@ import { FolderTree } from './library/FolderTree'
 import { MoveBar } from './library/MoveBar'
 import { GenrePicker, SessionPicker } from './library/FolderPickers'
 import { folderPath, GENRES, SESSIONS } from './library/paths'
+
+const MATCH = { file: 'same file', name: 'same artist and title', similar: 'similar artist and title' }
+
+/** An Inbox song that is already in a genre or session folder. */
+function InLibraryBadge({ copies }: { copies: NonNullable<LibraryFile['in_library']> }) {
+  const first = copies[0]
+  return (
+    <Badge tone="warn" title={copies.map(c => `${c.rel_path} (${MATCH[c.match]}${c.integrated_lufs != null ? `, ${c.integrated_lufs.toFixed(1)} LUFS` : ''})`).join('\n')}>
+      {copies.every(c => c.match === 'similar') ? 'Similar in' : 'Already in'} {first.kind === 'genre' ? first.folder : `session ${first.folder}`}
+      {copies.length > 1 ? ` +${copies.length - 1}` : ''}
+    </Badge>
+  )
+}
 
 export default function Library() {
   const [params, setParams] = useSearchParams()
@@ -25,6 +39,10 @@ export default function Library() {
   const [edits, setEdits] = useState<Record<string, { artist?: string; title?: string }>>({})
   const [genres, setGenres] = useState<Record<string, string>>({})
   const [sessions, setSessions] = useState<Record<string, string[]>>({})
+  // Inbox files that replace the copy already in a genre folder (the old copy goes to the Trash).
+  const [replacing, setReplacing] = useState<Record<string, boolean>>({})
+  // Inbox files not wanted (the library copy is better): they go to 00 Rejected, with no genre or session.
+  const [discarding, setDiscarding] = useState<Record<string, boolean>>({})
   // Names typed with "+ New…": they exist only as choices until the batch is applied.
   const [newGenres, setNewGenres] = useState<string[]>([])
   const [newSessions, setNewSessions] = useState<string[]>([])
@@ -51,24 +69,32 @@ export default function Library() {
       setEdits(keep)
       setGenres(keep)
       setSessions(keep)
+      setReplacing(keep)
+      setDiscarding(keep)
     }
   }
-  const pick = (k: string, f: string) => { setGenres({}); setSessions({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
+  const pick = (k: string, f: string) => { setGenres({}); setSessions({}); setReplacing({}); setDiscarding({}); setEdits({}); setChecked(new Map()); setParams(k ? { kind: k, ...(f && { folder: f }) } : {}) }
   const select = (id: number | null) => {
     const next = new URLSearchParams(params)
     if (id) next.set('file', String(id)); else next.delete('file')
     setParams(next)
   }
   const path = folderPath(kind, folder)
-  const sortable = Object.keys({ ...genres, ...sessions }).filter(rel => (genres[rel] || sessions[rel]?.length)
-    && files.data?.some(x => x.rel_path === rel))
+  // A replacement goes to the genre of the copy it replaces; the rest go where the genre picker says.
+  const genreCopy = (f: LibraryFile) => f.in_library?.find(c => c.kind === 'genre')
+  const replaces = (f: LibraryFile) => !discarding[f.rel_path] && !!replacing[f.rel_path] && !!genreCopy(f)
+  const genreOf = (f: LibraryFile) => (replaces(f) ? genreCopy(f)!.folder : genres[f.rel_path])
+  const sortable = (files.data ?? []).filter(f => discarding[f.rel_path] || genreOf(f) || sessions[f.rel_path]?.length)
   const sortInbox = () => batch.plan('apply', {
-    items: sortable.flatMap(rel => {
+    items: sortable.flatMap(f => {
+      const rel = f.rel_path
+      // A discarded file goes to 00 Rejected: no genre, no session copies.
+      if (discarding[rel]) return [{ source: rel, to: '', action: 'move', discard: true }]
       // Unsaved name edits travel with the move, so they are not lost. The move comes first: a session copy needs a genre.
-      const f = files.data?.find(x => x.rel_path === rel), e = edits[rel]
-      const edited = f && e && ((e.artist ?? f.artist ?? '') !== (f.artist ?? '') || (e.title ?? f.title ?? '') !== (f.title ?? ''))
+      const e = edits[rel], genre = genreOf(f)
+      const edited = e && ((e.artist ?? f.artist ?? '') !== (f.artist ?? '') || (e.title ?? f.title ?? '') !== (f.title ?? ''))
       return [
-        ...(genres[rel] ? [{ source: rel, to: `${GENRES}/${genres[rel]}`, action: 'move',
+        ...(genre ? [{ source: rel, to: `${GENRES}/${genre}`, action: 'move', ...(replaces(f) && { replace: true }),
           ...(edited && { artist: e.artist ?? f.artist ?? '', title: e.title ?? f.title ?? '' }) }] : []),
         ...(sessions[rel] ?? []).map(name => ({ source: rel, to: `${SESSIONS}/${name}`, action: 'copy' })),
       ]
@@ -81,6 +107,8 @@ export default function Library() {
     items: renames.map(f => ({ source: f.rel_path, artist: edits[f.rel_path].artist ?? f.artist ?? '', title: edits[f.rel_path].title ?? f.title ?? '' })) })
   // A saved rename gives the file a new path; choices made under the old path no longer count.
   const chosen = sortable.length
+  const discards = sortable.filter(f => discarding[f.rel_path]).length
+  const duplicates = files.data?.filter(f => f.in_library?.length).length ?? 0
   // The selection can include files hidden by the current search.
   const checkedFiles = [...checked.values()]
   const listedChecked = files.data?.filter(f => checked.has(f.rel_path)).length ?? 0
@@ -121,7 +149,8 @@ export default function Library() {
             {(kind || !search) && (
               <button className="small" onClick={() => {
                 if (!kind && !window.confirm('Analyze the whole library? This can take a long time. Files measured before are reused.')) return
-                startJob('analyze', { path: `${tree.data?.root}/${path}`.replace(/\/$/, '') })
+                // Only the whole library can be the loudness reference; one folder is a selection.
+                startJob('analyze', { path: `${tree.data?.root}/${path}`.replace(/\/$/, ''), reference: !kind })
               }}>
                 Analyze {kind ? 'folder' : 'library'}
               </button>
@@ -138,12 +167,21 @@ export default function Library() {
             {kind === 'inbox' && (
               <>
                 <button className="small" disabled={!renames.length} onClick={saveNames}>Save {renames.length || ''} name change{renames.length === 1 ? '' : 's'}</button>
-                <button className="small primary" disabled={!chosen} onClick={sortInbox}>Sort {chosen || ''} song{chosen === 1 ? '' : 's'}</button>
+                <button className="small primary" disabled={!chosen} onClick={sortInbox}>
+                  {discards ? `Apply ${chosen}` : `Sort ${chosen || ''} song${chosen === 1 ? '' : 's'}`}
+                </button>
               </>
             )}
           </div>
           {kind === 'inbox' && !!files.data?.length && (
             <p className="muted">Choose a genre and any sessions per song, then <b>Sort</b>. <b>+ New…</b> creates a folder when the batch is applied. Ask Claude (dj-library skill) for genre suggestions.</p>
+          )}
+          {kind === 'inbox' && duplicates > 0 && (
+            <div className="callout warn">
+              {plural(duplicates, 'song')} in the Inbox {duplicates === 1 ? 'is' : 'are'} already in the library (see the
+              badges). Sorting does not replace anything: tick <b>Replace</b> to send the old genre copy to the Trash, or
+              <b> Discard</b> to send the Inbox file to 00 Rejected.
+            </div>
           )}
           {kind === 'rejected' && !!files.data?.length && (
             <p className="muted">Versions not chosen. Listen once more if in doubt, then send them to the Trash.</p>
@@ -170,7 +208,8 @@ export default function Library() {
                       <input type="checkbox" checked={checked.has(f.rel_path)} onChange={() => toggle(f)} aria-label={`Select ${f.title || f.name}`} />
                     </td>
                     <td onClick={e => e.stopPropagation()}>
-                      <PlayButton player={player} track={{ song: String(f.id), file: f.id, title: f.title || f.name, name: f.rel_path }} />
+                      <PlayButton player={player} track={{ song: String(f.id), file: f.id, title: f.title || f.name, name: f.rel_path }} />{' '}
+                      <AnalyzeButton path={f.path} />
                     </td>
                     {kind === 'inbox' ? (<>
                       <td onClick={e => e.stopPropagation()}>
@@ -181,6 +220,7 @@ export default function Library() {
                         <input className="inline-edit" value={edits[f.rel_path]?.title ?? f.title ?? f.name} aria-label="Title"
                           onChange={e => setEdits({ ...edits, [f.rel_path]: { ...edits[f.rel_path], title: e.target.value } })} />
                         {f.genre_tag && <> <small className="muted">{f.genre_tag}</small></>}
+                        {!!f.in_library?.length && <> <InLibraryBadge copies={f.in_library} /></>}
                       </td>
                     </>) : (<>
                       <td>{f.artist || <span className="muted">—</span>}</td>
@@ -193,14 +233,30 @@ export default function Library() {
                     {kind === 'inbox' && (
                       <>
                         <td onClick={e => e.stopPropagation()}>
-                          <GenrePicker value={genres[f.rel_path] ?? ''} options={[...(tree.data?.genres ?? []), ...newGenres.filter(n => !tree.data?.genres.includes(n))]}
-                            onChange={g => setGenres({ ...genres, [f.rel_path]: g })}
-                            onCreate={n => setNewGenres(g => (g.includes(n) ? g : [...g, n]))} />
+                          <label title="Not wanted (for example the library copy is better): move it to 00 Rejected">
+                            <input type="checkbox" checked={!!discarding[f.rel_path]}
+                              onChange={e => setDiscarding({ ...discarding, [f.rel_path]: e.target.checked })} /> Discard{' '}
+                          </label>
+                          {!discarding[f.rel_path] && genreCopy(f) && (
+                            <label title={`Send ${genreCopy(f)!.rel_path} to the Trash and put this file in its place (undo restores it)`}>
+                              <input type="checkbox" checked={!!replacing[f.rel_path]}
+                                onChange={e => setReplacing({ ...replacing, [f.rel_path]: e.target.checked })} /> Replace{' '}
+                            </label>
+                          )}
+                          {discarding[f.rel_path]
+                            ? <small>to 00 Rejected</small>
+                            : replaces(f)
+                              ? <small>in {genreCopy(f)!.folder}</small>
+                              : <GenrePicker value={genres[f.rel_path] ?? ''} options={[...(tree.data?.genres ?? []), ...newGenres.filter(n => !tree.data?.genres.includes(n))]}
+                                onChange={g => setGenres({ ...genres, [f.rel_path]: g })}
+                                onCreate={n => setNewGenres(g => (g.includes(n) ? g : [...g, n]))} />}
                         </td>
                         <td onClick={e => e.stopPropagation()}>
-                          <SessionPicker value={sessions[f.rel_path] ?? []} options={[...(tree.data?.sessions ?? []), ...newSessions.filter(n => !tree.data?.sessions.includes(n))]}
-                            onChange={v => setSessions({ ...sessions, [f.rel_path]: v })}
-                            onCreate={n => setNewSessions(x => (x.includes(n) ? x : [...x, n]))} />
+                          {discarding[f.rel_path]
+                            ? <span className="muted">—</span>
+                            : <SessionPicker value={sessions[f.rel_path] ?? []} options={[...(tree.data?.sessions ?? []), ...newSessions.filter(n => !tree.data?.sessions.includes(n))]}
+                              onChange={v => setSessions({ ...sessions, [f.rel_path]: v })}
+                              onCreate={n => setNewSessions(x => (x.includes(n) ? x : [...x, n]))} />}
                         </td>
                       </>
                     )}

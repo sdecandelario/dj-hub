@@ -24,6 +24,8 @@ Audio analysis is read-only. Never modify music files, tags, or the Rekordbox li
 
 Artist and title tags use Spotify's spelling (see the profiles below).
 
+The Rekordbox page only reads the export logs in `~/Documents/rekordbox` (override with `DJ_REKORDBOX_DIR`) and the batch history to show where missing tracks are now; it changes nothing in Rekordbox.
+
 ### Moves, folders and deletion
 
 - File moves only happen through batches (`app/services/library.py`): plan, show the user, apply after approval.

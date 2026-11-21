@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .api import analysis, discovery, downloads, jobs, library, playlists, settings
+from .api import analysis, discovery, downloads, jobs, library, playlists, rekordbox, settings
 from .jobs import runner
 from .services import analysis as _a, discovery as _disc, downloads as _d, library as _l, playlists as _p, soulseek as _s  # noqa: F401 (job handlers)
 
@@ -47,7 +47,7 @@ async def same_machine_only(request: Request, call_next):
     return await call_next(request)
 
 
-for module in (library, jobs, analysis, downloads, playlists, discovery, settings):
+for module in (library, jobs, analysis, downloads, playlists, discovery, rekordbox, settings):
     app.include_router(module.router, prefix="/api")
 
 

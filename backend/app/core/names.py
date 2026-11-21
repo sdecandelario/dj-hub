@@ -3,6 +3,7 @@
 `normalize` is the key used for library and download songs. Spotify matching
 uses its own, looser rules in `matching.py`.
 """
+import difflib
 import re
 import unicodedata
 
@@ -19,6 +20,36 @@ def normalize(text):
     text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode().lower()
     text = re.sub(r'[^a-z0-9]+', ' ', text.replace('&', ' and ')).strip()
     return re.sub(r'^the ', '', text)
+
+
+def match_key(artist, title):
+    """Key for 'is this the same song?': normalized artist and base title. Version labels such as
+    '- 2005 Digital Remaster' or '(Radio Edit)' are dropped; remixes keep their name."""
+    return normalize(artist), normalize(split_version(title or '')[0] or title)
+
+
+SIMILAR_RATIO = 0.85
+
+
+def is_similar(key, other):
+    """Two match keys that differ only by small spelling slips ('Liason Dangereuse' / 'Liaisons Dangereuses',
+    'en el Parque' / 'Del Parque'). Both artist and title must be close, so different songs by one artist stay apart."""
+    if not key[1] or not other[1] or key == other:
+        return False
+    return all(difflib.SequenceMatcher(None, a, b).ratio() >= SIMILAR_RATIO for a, b in zip(key, other))
+
+
+# A title tail or bracket that only says "remaster": no information for a DJ, so it is left out of Inbox names.
+REMASTER_ONLY = (r'(?:\d{4}\s+)?(?:digital(?:ly)?\s+)?re-?master(?:ed)?(?:\s+(?:version|edition))?(?:\s+\d{4})?'
+                 r'|\d{4}\s+(?:re-?master(?:ed)?|digital\s+re-?master(?:ed)?)')
+REMASTER_TAIL = re.compile(r'\s+-\s+(?:' + REMASTER_ONLY + r')\s*$', re.I)
+REMASTER_BRACKET = re.compile(r'\s*[(\[]\s*(?:' + REMASTER_ONLY + r')\s*[)\]]', re.I)
+
+
+def strip_remaster(title):
+    """'Wardance - 2005 Digital Remaster' -> 'Wardance'. Other labels (remix, extended, live) stay."""
+    cleaned = REMASTER_BRACKET.sub('', REMASTER_TAIL.sub('', title or '')).strip()
+    return cleaned or (title or '')
 
 
 def guess_from_filename(stem):

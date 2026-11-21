@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type PlaylistInfo, type PlaylistTrack } from '../api'
+import { AnalyzeButton } from '../components/AnalyzeButton'
 import { isActive, isRunning, startJob, useActiveJobs, useSoulseekJobs } from '../components/jobsContext'
 import { ListToolbar } from '../components/ListToolbar'
 import { useSelection } from '../components/useSelection'
@@ -137,7 +138,7 @@ export default function Playlists() {
                 <td><a href={`https://open.spotify.com/track/${t.spotify_id}`} target="_blank" rel="noreferrer">{t.title}</a></td>
                 <td><StatusBadge status={t.status} label={STATUS_LABEL[t.status]} /></td>
                 <td>
-                  {t.match && <small title={t.match.path}>{t.match.relative_path}{t.match.note && ` · ${t.match.note}`}</small>}
+                  {t.match && <><small title={t.match.path}>{t.match.relative_path}{t.match.note && ` · ${t.match.note}`}</small> <AnalyzeButton path={t.match.path} /></>}
                   {t.status !== 'have' && t.download && (
                     <div><Link to={`/downloads?song=${t.download.song_key}`}><Badge tone="accent">Download waiting</Badge></Link></div>
                   )}

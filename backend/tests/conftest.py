@@ -16,6 +16,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("DJ_TRACKS_ROOT", str(root))
     monkeypatch.setenv("DJ_TRASH", str(trash))
     monkeypatch.setenv("DJ_SOURCES", str(downloads))
+    monkeypatch.setenv("DJ_REKORDBOX_DIR", str(tmp_path / "rekordbox"))
     monkeypatch.setenv("DJ_HUB_DB", str(tmp_path / "test.db"))
     for key in ("SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "LASTFM_API_KEY", "SOULSEEK_USERNAME", "SOULSEEK_PASSWORD"):   # never the real .env keys
         monkeypatch.delenv(key, raising=False)
@@ -23,7 +24,8 @@ def env(tmp_path, monkeypatch):
     db.reset_engine()
     db.migrate()
     config.get_config().settle_seconds = 0
-    yield type("Env", (), {"root": root, "trash": trash, "downloads": downloads, "tmp": tmp_path})
+    yield type("Env", (), {"root": root, "trash": trash, "downloads": downloads, "tmp": tmp_path,
+                           "rekordbox": tmp_path / "rekordbox"})
     db.reset_engine()
 
 

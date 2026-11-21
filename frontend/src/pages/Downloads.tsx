@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { api, type Batch, type Review } from '../api'
+import { api, type Batch, type PendingDownloads, type Review } from '../api'
 import { useBatch } from '../components/batchContext'
 import { PlayerBar } from '../components/player'
 import { usePlayer } from '../components/usePlayer'
@@ -23,6 +23,9 @@ export default function Downloads() {
   const batch = useBatch()
   const player = usePlayer()
   const { data, error, isLoading } = useQuery({ queryKey: ['downloads'], queryFn: () => api.get<Review | null>('/downloads') })
+  // Counted from the folders, without measuring: refreshed every few seconds and when you come back to the tab.
+  const pending = useQuery({ queryKey: ['pending'], queryFn: () => api.get<PendingDownloads>('/downloads/pending'),
+    refetchInterval: 8000, refetchOnWindowFocus: true })
   const decide = useMutation({
     mutationFn: ({ song, choice, keep }: { song: string; choice: string; keep?: string | null }) =>
       api.put(`/downloads/decisions/${song}`, { choice, keep_path: keep ?? null }),
@@ -72,6 +75,16 @@ export default function Downloads() {
         </button>
       </div>
       <ErrorNote error={error} />
+      {pending.data && (
+        <div className={`callout ${pending.data.new > 0 ? 'info' : 'ok'}`}>
+          {pending.data.files === 0
+            ? 'No audio files waiting in the download folders.'
+            : <><b>{plural(pending.data.files, 'file')}</b> waiting (about {plural(pending.data.songs, 'song')}).{' '}
+              {pending.data.new > 0
+                ? <>{pending.data.new} not reviewed yet: press <b>Review downloads now</b>.</>
+                : 'All of them are in the latest review.'}</>}
+        </div>
+      )}
       {data?.skipped_recent.length ? (
         <div className="callout info">{plural(data.skipped_recent.length, 'file')} changed in the last {data.settle_seconds} s were skipped (still downloading?).</div>
       ) : null}

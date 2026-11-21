@@ -160,13 +160,28 @@ def _quality(row):
     return out
 
 
+def pending(session):
+    """Audio files waiting in the download folders, counted without measuring anything.
+    Songs are estimated from file names; `new` counts files the latest review has not seen."""
+    sources = [Path(p).resolve() for p in settings.sources(session)]
+    files, _ = dl.find_files(sources, time.time(), 0)
+    review = latest_review(session)
+    reviewed = {v["path"] for song in (review.payload["songs"] if review else []) for v in song["versions"]}
+    paths = [str(path.resolve()) for _, path in files]
+    songs = {(dl.normalize(a), dl.normalize(t)) for a, t, _, _ in
+             (dl.song_identity({"path": p}) for p in paths)}
+    return {"files": len(paths), "songs": len(songs), "new": sum(p not in reviewed for p in paths),
+            "reviewed_at": review.created_at if review else None}
+
+
 def latest_review(session):
     return session.scalar(select(Review).order_by(Review.id.desc()).limit(1))
 
 
 def review_view(session):
     """Latest review with your decisions and the playlists that want each song.
-    Songs whose decision was applied are left out (their files have moved)."""
+    Songs whose decision was applied are left out while their files are gone (they have moved). A file back in
+    the download folder (downloaded again, or the batch was undone) is a new song to decide."""
     review = latest_review(session)
     if review is None:
         return None
@@ -176,12 +191,14 @@ def review_view(session):
     songs = []
     for song in payload["songs"]:
         decision = decisions.get(song["id"])
+        present = [v for v in song["versions"] if Path(v["path"]).is_file()]
         if decision and decision.applied_batch_id:
-            continue
+            if not present:
+                continue
+            decision = None
         paths = {v["path"] for v in song["versions"]}
         if decision and decision.choice == "keep" and decision.keep_path not in paths:
             decision = None
-        present = [v for v in song["versions"] if Path(v["path"]).is_file()]
         songs.append({**song, "gone": len(present) < len(song["versions"]),
                       "decision": None if decision is None else {
                           "choice": decision.choice, "keep_path": decision.keep_path,
