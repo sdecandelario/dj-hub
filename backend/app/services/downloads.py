@@ -1,7 +1,6 @@
 """Downloads review: measure new downloads, pick the best version, move picks to Inbox/Rejected."""
 import concurrent.futures
 import datetime as dt
-import time
 from pathlib import Path
 
 from sqlalchemy import delete, select
@@ -17,11 +16,12 @@ from . import analysis, library, playlists, settings
 
 
 
-def soulseek_finished(session):
-    """Resolved paths of the files our own Soulseek downloads have completed: no need to wait for them to settle."""
-    jobs = session.scalars(select(Job).where(Job.type == "soulseek_download").order_by(Job.id.desc()).limit(50)).all()
-    return {str(Path(f["local_path"]).resolve()) for job in jobs for f in (job.summary or {}).get("files", [])
-            if f.get("done") and f.get("local_path")}
+def soulseek_busy(session):
+    """Resolved paths of the files a running Soulseek download is still writing (it writes straight into the folder)."""
+    jobs = session.scalars(select(Job).where(Job.type == "soulseek_download", Job.status == "running")).all()
+    return {str(Path(f["local_path"]).resolve()) for job in jobs
+            for song in (job.summary or {}).get("songs", {}).values() for f in song["files"]
+            if not f.get("done") and f.get("local_path")}
 
 
 @handler("review_downloads")
@@ -34,8 +34,8 @@ def run_review(ctx):
     with session_scope() as s:
         sources = [Path(p).resolve() for p in settings.sources(s)]
     with session_scope() as s:
-        finished = soulseek_finished(s)
-    files, skipped = dl.find_files(sources, time.time(), cfg.settle_seconds, finished)
+        busy = soulseek_busy(s)
+    files, skipped = dl.find_files(sources, busy)
     versions = audio.tool_versions()
     items = []
     for source, path in files:
@@ -56,7 +56,7 @@ def run_review(ctx):
     payload = {
         "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "sources": [str(p) for p in sources], "library_median": median, "median_run": median_run,
-        "skipped_recent": [str(p) for p in skipped], "settle_seconds": cfg.settle_seconds, "songs": songs,
+        "skipped_busy": [str(p) for p in skipped], "songs": songs,
     }
     with session_scope() as s:
         s.add(Review(job_id=ctx.job_id, payload=payload))
@@ -67,7 +67,7 @@ def run_review(ctx):
     multi = sum(len(song["versions"]) > 1 for song in songs)
     return {"message": f"{len(items)} file(s), {len(songs)} song(s), {multi} with more than one version; "
                        f"{measured} measured now", "files": len(items), "songs": len(songs),
-            "measured": measured, "skipped_recent": len(skipped)}
+            "measured": measured, "skipped_busy": len(skipped)}
 
 
 def _store_downloads(session, items):
@@ -164,7 +164,7 @@ def pending(session):
     """Audio files waiting in the download folders, counted without measuring anything.
     Songs are estimated from file names; `new` counts files the latest review has not seen."""
     sources = [Path(p).resolve() for p in settings.sources(session)]
-    files, _ = dl.find_files(sources, time.time(), 0)
+    files, _ = dl.find_files(sources, soulseek_busy(session))
     review = latest_review(session)
     reviewed = {v["path"] for song in (review.payload["songs"] if review else []) for v in song["versions"]}
     paths = [str(path.resolve()) for _, path in files]

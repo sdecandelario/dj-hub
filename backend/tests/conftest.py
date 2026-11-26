@@ -23,7 +23,6 @@ def env(tmp_path, monkeypatch):
     config.reload_config()
     db.reset_engine()
     db.migrate()
-    config.get_config().settle_seconds = 0
     yield type("Env", (), {"root": root, "trash": trash, "downloads": downloads, "tmp": tmp_path,
                            "rekordbox": tmp_path / "rekordbox"})
     db.reset_engine()

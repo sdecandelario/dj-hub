@@ -244,8 +244,7 @@ export type Review = {
   sources: string[]
   library_median: number | null
   median_run: number | null
-  skipped_recent: string[]
-  settle_seconds: number
+  skipped_busy: string[]
   songs: Song[]
 }
 
@@ -297,7 +296,6 @@ export type Settings = {
   sources: string[]
   sources_locked: boolean
   soulseek: { min_bitrate: number; candidates: number }
-  settle_seconds: number
   workers: number
   missing_tools: string[]
 }

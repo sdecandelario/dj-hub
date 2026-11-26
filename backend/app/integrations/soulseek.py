@@ -53,7 +53,7 @@ def _snapshot(result, transfer):
     done = transfer.state.VALUE == TransferState.COMPLETE
     return {"username": result.username, "path": result.path, "size": result.size,
             "bytes": transfer.bytes_transfered, "speed": round(transfer.get_speed()),
-            "done": done, "local_path": transfer.local_path if done else None,
+            "done": done, "local_path": transfer.local_path,
             "state": transfer.state.VALUE.name.lower()}
 
 
