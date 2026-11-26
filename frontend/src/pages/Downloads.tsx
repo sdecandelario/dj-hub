@@ -85,8 +85,8 @@ export default function Downloads() {
                 : 'All of them are in the latest review.'}</>}
         </div>
       )}
-      {data?.skipped_recent.length ? (
-        <div className="callout info">{plural(data.skipped_recent.length, 'file')} changed in the last {data.settle_seconds} s were skipped (still downloading?).</div>
+      {data?.skipped_busy?.length ? (
+        <div className="callout info">{plural(data.skipped_busy.length, 'file')} still downloading from Soulseek were skipped.</div>
       ) : null}
       {isLoading && <Empty>Loading…</Empty>}
       {!isLoading && !data && <Empty>No review yet. Click <b>Review downloads now</b>; the first run measures every file and takes a while.</Empty>}

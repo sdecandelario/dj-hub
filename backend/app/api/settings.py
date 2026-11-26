@@ -26,7 +26,7 @@ def get_settings(session=Depends(get_session, scope="function")):
     cfg = get_config()
     return {"root": str(cfg.root), "trash": str(cfg.trash), "db": str(cfg.db_path),
             "sources": [str(p) for p in settings.sources(session)], "sources_locked": settings.sources_locked(),
-            "soulseek": settings.soulseek(session), "settle_seconds": cfg.settle_seconds, "workers": cfg.workers, "missing_tools": audio.missing_tools()}
+            "soulseek": settings.soulseek(session), "workers": cfg.workers, "missing_tools": audio.missing_tools()}
 
 
 @router.put("/settings")

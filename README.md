@@ -40,7 +40,7 @@ Discover needs a free Last.fm API key (https://www.last.fm/api/account/create; t
 - Every file change is planned first and shown for confirmation. Nothing is deleted: removals go to the Trash. Each applied change is a batch you can undo from History.
 - A song keeps exactly one genre folder; sessions hold copies.
 - If files change between the preview and Apply, nothing is done and you are asked to preview again.
-- Downloads changed in the last 2 minutes are skipped (possibly still downloading).
+- Files a running Soulseek download is still writing are left out of the download review until they finish.
 - Rekordbox finds tracks by path: after moving a song Rekordbox already imported, re-link it there.
 
 ## Command line

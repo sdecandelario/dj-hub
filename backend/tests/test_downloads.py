@@ -230,11 +230,25 @@ if __name__ == '__main__':
     unittest.main()
 
 
-def test_recent_files_are_skipped_unless_a_finished_download(tmp_path):
-    import time
+def test_files_still_downloading_are_skipped(tmp_path):
     from app.core import downloads as dl
-    fresh, finished = tmp_path / "a.mp3", tmp_path / "b.mp3"
-    fresh.write_bytes(b"x")
-    finished.write_bytes(b"x")
-    files, skipped = dl.find_files([tmp_path], time.time(), 120, finished={str(finished.resolve())})
+    partial, done = tmp_path / "a.mp3", tmp_path / "b.mp3"
+    partial.write_bytes(b"x")
+    done.write_bytes(b"x")
+    files, skipped = dl.find_files([tmp_path], busy={str(partial.resolve())})
     assert [p.name for _, p in files] == ["b.mp3"] and [p.name for p in skipped] == ["a.mp3"]
+
+
+def test_running_soulseek_jobs_mark_their_unfinished_files_busy(env, tmp_path):
+    from app.db import session_scope
+    from app.models import Job
+    from app.services import downloads
+    files = [{"done": False, "local_path": str(tmp_path / "partial.mp3")},
+             {"done": True, "local_path": str(tmp_path / "done.mp3")},
+             {"done": False, "local_path": None}]
+    with session_scope() as s:
+        s.add(Job(type="soulseek_download", status="running", summary={"songs": {"A B": {"found": 3, "files": files}}}))
+        s.add(Job(type="soulseek_download", status="interrupted",
+                  summary={"songs": {"C D": {"found": 1, "files": [{"done": False, "local_path": str(tmp_path / "old.mp3")}]}}}))
+    with session_scope() as s:
+        assert downloads.soulseek_busy(s) == {str((tmp_path / "partial.mp3").resolve())}
